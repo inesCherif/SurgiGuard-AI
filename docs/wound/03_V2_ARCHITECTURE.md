@@ -36,6 +36,8 @@ d1/src/surgiguard_d1/wound/
 ├── measurement.py   measure(): redness vs own skin, spread ring, shape, crust / pale, closure material
 ├── registration.py  register(): ORB + RANSAC homography · compare(): trends only for a proven same site
 ├── render.py        overlay() · encode_jpeg()
+├── calibration.py   CardSpec · CardCalibrator · Calibration · ColourModel (step 2, see 04_CALIBRATION.md)
+├── card_render.py   render_card(): the printable card, drawn from CardSpec
 ├── pipeline.py      WoundAnalyzer (Facade) + analyze() function API
 ├── model_bundle.py  LinearHead · OODGate · ModelBundle (JSON + NPZ) · load() factory · sklearn adapter
 └── model.py         Encoder (frozen CLIP) · embed() · predict() · occlusion_map() · warm_up()
@@ -85,6 +87,7 @@ bytes ─► colour.load ─► quality.assess_quality ──unusable──► "
 | **Factory Method** | `model_bundle.load(path)` | Chooses the reader from the file type: `.json` → portable, `.joblib` → legacy through the adapter. Callers never branch on formats. |
 | **Value Object** (immutable `@dataclass(frozen=True)`) | `Segmentation`, `LinearHead`, `OODGate`, `ModelBundle`, `Limits`, `Kernels` | No hidden mutation between stages; safe to share across threads; easy to compare in tests. |
 | **Dependency Injection** | `WoundAnalyzer(segmenter=…, limits=…, kernels=…)` | Tests inject a fake segmenter (`test_wound_architecture.py`). The benchmark will inject each candidate. |
+| **Null Object** | `calibration.NOT_FOUND` | "No card" is a real result object with `found=False` and a reason, so the pipeline never branches on `None`. |
 | **Memoised factory** | `get_encoder()` with `lru_cache`, `load_heads()` | The 600 MB encoder is loaded once per process; `warm_up()` does it at server start. |
 
 ---

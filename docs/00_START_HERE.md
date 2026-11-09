@@ -17,9 +17,10 @@ The files are numbered, so read them in that order. Each line says what you will
 | # | File | What you learn | Time |
 |---|---|---|---|
 | 01 | [wound/01_HOW_V1_WORKS.md](wound/01_HOW_V1_WORKS.md) | the hackathon pipeline, stage by stage: quality gate, CIELAB segmentation, staples, ORB registration, CLIP model, vision LLM, review rule | 30 min |
-| 02 | [wound/02_PROBLEMS_AND_SOLUTIONS.md](wound/02_PROBLEMS_AND_SOLUTIONS.md) | the engineering journal: every problem met, its cause, the fix and the proof (hackathon P1–P13, audit A1–A9, v2 V1–V10…) | 20 min |
+| 02 | [wound/02_PROBLEMS_AND_SOLUTIONS.md](wound/02_PROBLEMS_AND_SOLUTIONS.md) | the engineering journal: every problem met, its cause, the fix and the proof (hackathon P1–P13, audit A1–A9, v2 V1–V14…) | 20 min |
 | 03 | [wound/03_V2_ARCHITECTURE.md](wound/03_V2_ARCHITECTURE.md) | v2 design: module map, GoF patterns, SOLID, DRY, CV best practices, how the refactor was proven safe | 20 min |
-| 04 | wound/04_CALIBRATION.md *(v2 step 2, in progress)* | calibration card: perspective, white balance, real size in mm and cm² | — |
+| 04 | [wound/04_CALIBRATION.md](wound/04_CALIBRATION.md) | v2 step 2: calibration card (ArUco homography, white balance in linear RGB, exact mm²); results on ground-truth photos and honest limits | 20 min |
+| 05 | wound/05_SEGMENTATION.md *(v2 step 3, next)* | learned wound segmentation, Dice / IoU | — |
 
 **To prepare an interview or the defence:** read B-01 for *what* it does, B-02 for *what went wrong and how I solved it*, and B-03 for *how it is engineered*.
 

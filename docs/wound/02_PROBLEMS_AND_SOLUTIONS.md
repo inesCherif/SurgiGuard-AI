@@ -92,8 +92,8 @@ These are the problems found by reading and testing v1 line by line. They define
 | A1 ✅ V8 | The review rule still alerts on the chance-level redness score | `d1_wound.py` `decide()`: Δring ≥ 4, Δredness ≥ 6; model card: AUROC 0.503 | Rule based only on validated signals; redness trend kept as display-only information |
 | A2 ✅ V7 | Two different analysers (patient vs clinician) | `backend/app/wound_image.py` (512 px, sharpness cut-off 12) vs `pipeline.py` (640 px, cut-off 25) | One analyser |
 | A3 | The model looks at the whole photo, not the wound | `model.predict()` encodes the full image; the mask is unused | Learned wound segmentation, then classify the wound crop |
-| A4 | No real size, no colour calibration | Area is a % of the frame; no white reference | Printable calibration card (ArUco + colour patches + mm scale) |
-| A5 | Pixel-based kernels (25/51/121 px) do not scale with distance | `_finish()`, `measure()` | Express sizes in mm (with the card) or relative to the wound size |
+| A4 ✅ step 2 | No real size, no colour calibration | Area is a % of the frame; no white reference | Printable calibration card (ArUco + colour patches + mm scale) |
+| A5 ✅ V13 | Pixel-based kernels (25/51/121 px) do not scale with distance | `_finish()`, `measure()` | Express sizes in mm (with the card) or relative to the wound size |
 | A6 | Uncalibrated probabilities, fixed ±0.05 band | `model.py` | Temperature scaling and calibration plots |
 | A7 ✅ 1b | Stale docs: DINOv2 / 7×7 / 100 KB | `model.py` docstring, model card | Fix |
 | A8 ✅ V10 | Thread-unsafe global state | `_staple_chain.last_count` | Return the count |
@@ -178,5 +178,42 @@ Design rationale: [03_V2_ARCHITECTURE.md](03_V2_ARCHITECTURE.md).
 - **Problem:** `_staple_chain.last_count` stored the staple count **on the function object**. With two photos analysed at the same time (the backend runs jobs in threads), one photo could get the other's count.
 - **Fix:** the count is returned inside the immutable `Segmentation` value object.
 - **Test:** concurrent analyses give the same results as sequential ones.
+
+## Step 2: calibration card (Nov 2026)
+
+Method and results: [04_CALIBRATION.md](04_CALIBRATION.md).
+
+### V11. Area under perspective was 8% too small
+- **Problem:** on a tilted synthetic photo with a known 40 × 3 mm incision (120 mm²), the measured area was **110.7 mm²**.
+- **Why:**
+  - I first measured the polygon drawn through the **centres of the boundary pixels**, which loses half a pixel along every edge. For a 3 mm wide incision (about 15 px), that is roughly 1 px of 15, about 7%: a classic rasterisation bias.
+  - Under perspective, pixels also don't all cover the same area.
+- **Fix:** sum the exact area of every mask pixel, `|det J(x, y)| = |det H| / (h31·x + h32·y + h33)³`. Length and width use the *outer* pixel corners.
+- **Check:** within 5% (area) and 3% (length) under tilt.
+
+### V12. The white card created a fake wound next to it
+- **Problem:** end-to-end, the "incision" was measured as **112 mm** long. The overlay showed a green blob on the skin just below the card, merged with the real incision.
+- **Why:**
+  - The card was correctly excluded from the skin mask.
+  - But the segmenter compares each pixel with its **local background**, a Gaussian blur with σ ≈ image size / 18, and that blur still contained the bright white card.
+  - Skin next to the card therefore looked "darker than its surroundings", and the line-merging step joined that blob to the incision.
+- **Fix:** **normalized convolution**, `background = blur(x·w) / blur(w)` with `w = 0` on ignored pixels (`segmentation._background`). It is used only when something is ignored, so photos without a card stay bit-identical to v1.
+- **Lesson:** excluding a region from the *decision* is not enough; it must also be excluded from every *statistic* the decision depends on.
+
+### V13. The same wound looked 27% bigger from further away (audit A5 caught by a test)
+- **Problem:** the same synthetic wound, photographed at 0.8× the distance, measured **+27%** in real mm², even though both photos were calibrated.
+- **Why:** the segmenter grows its mask by a fixed **7 pixels**. Further away, 1 px covers more millimetres, so the margin grows in real size. For a thin incision the margin is a large share of the area.
+- **Fix:** with a known scale, every kernel is converted to keep its **millimetre** size (`Kernels.scaled(px_per_mm)`, nominal 5 px/mm), and calibrated comparisons use mm² instead of the frame share.
+- **Check:** same wound from two distances within 15%.
+
+### V14. Honest limit: the classical segmenter's margin dominates thin incisions
+- **Observation:** with everything above fixed, the end-to-end length is good (42.9 mm vs 40), but the width and area are about **2×** the truth (6.1 mm and 2.44 cm² vs 3 mm and 1.2 cm²).
+- **Why:** this is not the calibration (on the true outline it is within 5%). The classical segmenter deliberately grows its mask by about 1.4 mm on each side so the edge is never missed.
+- **Decision:** keep it for now and **report it**. Calibration makes the segmentation error measurable in millimetres; step 3 (learned segmentation, Dice/IoU against true outlines) is the fix.
+
+### Note: memory and test isolation
+- Two backend tests failed once, only in the full suite, right after the backend was force-stopped while memory was nearly exhausted. Two clean full runs then gave 194/194.
+- Separately, a test that loads CLIP crashed with an access violation while the running backend held another CLIP copy (see V5).
+- **Rule:** run the full test suites with the backend stopped and `HF_HUB_OFFLINE=1`.
 
 *(more entries are added here as the work progresses)*
