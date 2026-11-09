@@ -12,7 +12,7 @@ from pathlib import Path
 
 from app import clock
 from app import models as m
-from app import wound_image, wounds
+from app import wounds
 from app.agents.checkin import to_scale5
 from app.db import Repo, drop_all
 
@@ -100,7 +100,7 @@ def load(repo: Repo, now: datetime | None = None) -> dict:
     day1, day2 = demo_analysis("day1"), demo_analysis("day2")
     for asset, ts, analysis, comparison in (
             ("day1", discharge + timedelta(hours=2), day1, {"available": False, "reason": "first photo: it becomes the reference"}),
-            ("day2", at(today - timedelta(days=1), "10:00"), day2, wound_image.compare(day1, day2))):
+            ("day2", at(today - timedelta(days=1), "10:00"), day2, demo_comparison("day1", "day2"))):
         objs.append(m.Observation(id=f"obs_photo_{asset}", patient_id="sarah", type="photo", source="patient",
                                   measured_at=ts, received_at=ts, simulated=True,
                                   value={"asset": asset, "url": f"/static/photos/{asset}.jpg", "label": asset,
@@ -116,7 +116,22 @@ def load(repo: Repo, now: datetime | None = None) -> dict:
 
 @lru_cache(maxsize=None)
 def _demo_analysis_cached(asset: str) -> str:
-    return json.dumps(wound_image.analyze(wounds.demo_bytes(asset)))
+    """Patient view of the ONE wound analysis (d1 pipeline), computed once per process."""
+    from app.integrations import d1_wound
+    from app.integrations.wound_views import patient_analysis
+    res = d1_wound._d1().analyze(wounds.demo_bytes(asset))
+    return json.dumps(patient_analysis(d1_wound._d1().strip_private(res)))
+
+
+@lru_cache(maxsize=None)
+def _demo_comparison_cached(ref: str, cur: str) -> str:
+    from app.integrations import d1_wound
+    return json.dumps(d1_wound.compare_photos(wounds.demo_bytes(ref), wounds.demo_bytes(cur)))
+
+
+def demo_comparison(ref: str, cur: str) -> dict:
+    """Registered comparison: the demo photos show different patients, so it is refused (never a fake change)."""
+    return json.loads(_demo_comparison_cached(ref, cur))
 
 
 def demo_analysis(asset: str) -> dict:

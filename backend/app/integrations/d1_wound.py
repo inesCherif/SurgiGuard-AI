@@ -6,12 +6,13 @@ enforces the windows; the patient confirms the dressing change; nobody is asked 
 What:
 1. Code (no AI): photo quality (retake if poor), the incision outlined on an overlay image, redness against the
    patient's own surrounding skin, comparison with the reference photo ONLY if registration shows it is the same site.
-2. Vision LLM (Mistral Pixtral / Groq Llama-4-Scout / OpenRouter, whichever key is set): describes what is visible in
+   This is the ONLY wound analysis: the patient view is an adapter over it (wound_views.py).
+1b. Trained model (local, CLIP + linear heads, SurgWound labels).
+2. Vision LLM (Groq Qwen / Mistral Pixtral / OpenRouter, whichever key is set): describes what is visible in
    structured JSON, with a confidence per finding. Diagnosis words are filtered out (app/safety/output_guard.py). In stub
    mode it only restates the code's measurements and says so.
-3. Rule (code): review_suggested when the code sees clearly more / spreading redness or a larger area, or when the LLM
-   reports discharge, open edges or spreading redness with medium/high confidence -> an "attention" alert for the
-   clinician. Never an emergency, never a diagnosis; the photo never replaces urgent assessment.
+3. Rules (code, wound_rules.py): model "yes" on discharge / risk / review, registered area growth, or a confident
+   live vision finding -> an "attention" alert for the clinician. Never an emergency, never a diagnosis.
 """
 
 import base64
@@ -28,6 +29,8 @@ from ..config import settings
 from ..db import Repo, session_scope
 from ..safety import output_guard
 from .d1_bridge import D1_SRC
+from .wound_rules import ModelSignRule, review_reasons
+from .wound_views import FIRST_PHOTO, patient_analysis, patient_comparison
 
 log = logging.getLogger("surgiguard.d1.wound")
 ACTOR = "d1:wound"
@@ -76,7 +79,17 @@ def analyze(repo: Repo, obs: m.Observation, data: bytes) -> dict:
         (wounds.UPLOADS / name).write_bytes(wound.overlay(res["_bgr"], res.get("_mask"), caption))
         overlay_url = f"/uploads/{name}"
     out = {**wound.strip_private(res), "overlay_url": overlay_url, "reference_id": ref_obs.id if ref_bytes else None}
-    obs.value = {**obs.value, "d1": out}
+    analysis = patient_analysis(out)
+    if ref_bytes is None:
+        comparison = dict(FIRST_PHOTO)
+    elif out.get("comparison") is None:
+        comparison = {"available": False, "reason": "this photo could not be measured: unknown"}
+    else:
+        comparison = patient_comparison(out["comparison"])
+    obs.value = {**obs.value, "d1": out, "analysis": analysis, "comparison": comparison,
+                 "reference_id": ref_obs.id if ref_bytes else None,
+                 "reference_url": ref_obs.value.get("url") if ref_bytes else None}
+    obs.quality = analysis["quality"]
     repo.add(obs)
     audit.log(repo, obs.patient_id, ACTOR, "wound.analyzed",
               {"quality": out["quality"]["status"], "found": out["segmentation"].get("found"),
@@ -87,8 +100,8 @@ def analyze(repo: Repo, obs: m.Observation, data: bytes) -> dict:
 
 # ------------------------------------------------------------------ 1b. learned model (SurgWound, CLIP ViT-B/16 + linear heads)
 
-# Heads whose "yes" is a reason for the clinician to look (the model can only ADD a reason, never remove one).
-MODEL_REVIEW_HEADS = ("exudate", "elevated_risk", "needs_review")
+# Heads whose "yes" is a reason for the clinician to look (defined once, in the rule that uses them).
+MODEL_REVIEW_HEADS = ModelSignRule().heads
 # What the patient sees (signs only; risk / urgency ratings stay with the care team).
 PATIENT_HEADS = ("erythema", "edema", "exudate", "not_healed")
 
@@ -232,30 +245,11 @@ def vision_review(repo: Repo, obs: m.Observation, data: bytes) -> dict:
     return out
 
 
-# ------------------------------------------------------------------ 3. rule
-
-CONCERNING = {"discharge_appearance", "wound_edges", "redness"}
-
+# ------------------------------------------------------------------ 3. rules
 
 def decide(repo: Repo, obs: m.Observation) -> str | None:
-    """Code decides whether the clinician should look; the LLM's reading is one input, never the only gate."""
-    cv, vr = obs.value.get("d1") or {}, obs.value.get("vision_review") or {}
-    reasons = []
-    md = obs.value.get("model") or {}
-    if md.get("available"):
-        hits = [f'{a["text"]} (p={a["probability"]})' for k, a in md["attributes"].items()
-                if k in MODEL_REVIEW_HEADS and a["decision"] == "yes"]
-        if hits:
-            reasons.append("model: " + "; ".join(hits))
-    comp = cv.get("comparison") or {}
-    if comp.get("available") and (comp.get("redness_spread_change", 0) >= 4 or comp.get("redness_change_delta_a", 0) >= 6):
-        reasons.append(f"code: {comp['summary']}")
-    if comp.get("available") and comp.get("area_change_pct", 0) >= 30:
-        reasons.append(f"code: marked area {comp['area_change_pct']}% larger than the reference photo")
-    if vr.get("available") and vr.get("mode") == "live" and vr.get("review_suggested"):
-        strong = [f for f in vr.get("findings", []) if f["aspect"] in CONCERNING and f["confidence"] in ("medium", "high")]
-        if strong:
-            reasons.append("vision reading: " + "; ".join(f["finding"] for f in strong)[:300])
+    """Code decides whether the clinician should look (rules in wound_rules.py); the LLM is one input, never the only gate."""
+    reasons = review_reasons(obs.value)
     if not reasons:
         return None
     a = alerts.create(repo, obs.patient_id, "attention", "Wound photo: clinician review suggested",
@@ -264,6 +258,15 @@ def decide(repo: Repo, obs: m.Observation) -> str | None:
     obs.value = {**obs.value, "review_alert_id": a.id}
     repo.add(obs)
     return a.id
+
+
+def compare_photos(ref_bytes: bytes, cur_bytes: bytes) -> dict:
+    """Registered comparison of any two photos (patient-view shape), for the investigation agent."""
+    wound = _d1()
+    res = wound.analyze(cur_bytes, reference=ref_bytes)
+    if res.get("comparison") is None:
+        return {"available": False, "reason": "one of the photos could not be measured: unknown"}
+    return patient_comparison(res["comparison"])
 
 
 @runner.job("wound_review")
@@ -284,5 +287,9 @@ def process(repo: Repo, obs: m.Observation, data: bytes) -> None:
         analyze(repo, obs, data)
     except Exception:  # analysis must never lose the photo itself
         log.exception("wound analysis failed for %s", obs.id)
+        obs.value = {**obs.value, "analysis": patient_analysis(None),
+                     "comparison": {"available": False, "reason": "the photo could not be analysed: unknown"}}
+        obs.quality = "unusable"
+        repo.add(obs)
         return
     runner.submit("wound_review", obs.id)

@@ -12,7 +12,7 @@ from datetime import timedelta
 from pathlib import Path
 from statistics import median
 
-from .. import audit, clock, wound_image, wound_photos
+from .. import audit, clock, wound_photos
 from .. import models as m
 from ..agents import medication
 from ..config import settings
@@ -218,12 +218,16 @@ def compare_wound_photos(ctx: Ctx, photo_id_a: str, photo_id_b: str) -> dict:
         return {"error": "unknown photo id(s)", "known_photo_ids": known}
     if a.measured_at > b.measured_at:
         a, b = b, a
-    result = wound_image.compare(a.value.get("analysis"), b.value.get("analysis"))
+    from ..integrations import d1_wound
+    data_a, data_b = d1_wound.photo_bytes(a.value.get("url")), d1_wound.photo_bytes(b.value.get("url"))
+    if data_a is None or data_b is None:
+        return {"available": False, "photo_id_a": a.id, "photo_id_b": b.id, "reason": "photo file missing: unknown"}
+    result = d1_wound.compare_photos(data_a, data_b)   # registered: different sites are refused, not reported as change
     if not result.get("available"):
         return {"available": False, "photo_id_a": a.id, "photo_id_b": b.id,
                 "reason": result.get("reason", "photos could not be compared: unknown, needs clinician review")}
     return {"available": True, "photo_id_a": a.id, "photo_id_b": b.id, "comparison": result,
-            "method": "measured by code from the two photos (CIELAB redness area), not a diagnosis"}
+            "method": "measured by code from two photos proven to show the same site (ORB + RANSAC), not a diagnosis"}
 
 
 # ------------------------------------------------------------------ patient-facing tools

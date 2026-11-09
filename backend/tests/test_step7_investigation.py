@@ -55,11 +55,12 @@ def test_infection_pattern_full_investigation(repo):
         assert o.source == "device" and c["quality"] == o.quality
     assert s["patient_reported"] and s["device_measured"]
     assert "not a diagnosis" in s["ai_interpretation"].lower()
-    # redness measured by code from the real demo photos (day 1 vs today's photo): more redness
+    # the demo photos (day 1 vs today's) show two DIFFERENT patients: the registered comparison is refused and the
+    # summary does not report an invented redness change (v1 said "+35 %"); the refusal is in the audit trail
     photo_cmp = [e.data["result"] for e in audit.trail(repo, "investigation", inv.id)
                  if e.kind == "tool.call" and e.data["tool"] == "compare_wound_photos"][0]
-    assert photo_cmp["comparison"]["trend"] == "up"
-    assert f'+{photo_cmp["comparison"]["redness_area_change_pct"]}%' in s["what_changed"]
+    assert photo_cmp["available"] is False and "same area" in photo_cmp["reason"]
+    assert "redness area" not in s["what_changed"]
     assert any("Cefuroxime" in c["text"] for c in s["patient_reported"])  # the missed antibiotic dose
 
     alert = fresh(repo, m.Alert, inv.alert_id)
@@ -209,8 +210,8 @@ def test_condition_speculation_rejected_for_clinician(repo):
 def test_compare_accepts_photo_labels(repo):
     inv = repo.add(m.Investigation(patient_id="sarah", deadline=clock.now()))
     r = tools.compare_wound_photos(tools.Ctx(repo, inv), "day2", "day1")
-    assert r["available"] and r["photo_id_a"] == "obs_photo_day1"  # labels resolved, oldest first
-    assert r["comparison"]["trend"] == "stable" and "not_measured" in r["comparison"]
+    assert r["photo_id_a"] == "obs_photo_day1" and r["photo_id_b"] == "obs_photo_day2"  # labels resolved, oldest first
+    assert r["available"] is False and "same area" in r["reason"]   # different patients: refused, never a fake trend
 
 
 def test_missed_doses_always_in_summary_and_false_photo_gap_dropped(repo):

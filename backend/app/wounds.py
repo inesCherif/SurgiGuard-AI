@@ -1,11 +1,11 @@
-"""Wound photos: store the image, measure it (app/wound_image.py), compare with the reference photo."""
+"""Wound photos: store the image, then ONE analysis (d1 pipeline via integrations/d1_wound.py) fills both the
+clinician view (`d1`) and the patient view (`analysis`, `comparison`, through the wound_views adapter)."""
 
 from pathlib import Path
 
 from . import audit
 from . import models as m
 from .db import Repo
-from .wound_image import analyze, compare
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 UPLOADS = BACKEND_DIR / "uploads"
@@ -24,7 +24,6 @@ def save_photo(repo: Repo, patient_id: str, data: bytes, source: str = "patient"
                request_id: str | None = None, extra: dict | None = None) -> m.Observation:
     if len(data) > MAX_BYTES:
         raise ValueError("photo larger than 12 MB")
-    analysis = analyze(data)
     if asset:
         url, label, simulated = f"/static/photos/{asset}.jpg", asset, True
     else:
@@ -32,23 +31,20 @@ def save_photo(repo: Repo, patient_id: str, data: bytes, source: str = "patient"
         name = f"{m.new_id('img')}.jpg"
         (UPLOADS / name).write_bytes(data)
         url, label, simulated = f"/uploads/{name}", "photo", False
-    ref = reference(repo, patient_id)
-    comparison = compare(ref.value.get("analysis") if ref else None, analysis) if ref else \
-        {"available": False, "reason": "first photo: it becomes the reference"}
-    value = {"url": url, "label": label, "asset": asset, "analysis": analysis, "comparison": comparison,
-             "reference_id": ref.id if ref else None, "reference_url": ref.value.get("url") if ref else None}
+    value = {"url": url, "label": label, "asset": asset}
     if request_id:
         value["request_id"] = request_id
     value.update(extra or {})
-    quality = "good" if analysis["quality"] == "good" else analysis["quality"]
-    obs = repo.add(m.Observation(patient_id=patient_id, type="photo", source=source, value=value, quality=quality,
+    obs = repo.add(m.Observation(patient_id=patient_id, type="photo", source=source, value=value, quality="unknown",
                                  simulated=simulated))
-    audit.log(repo, patient_id, "code:wound_image", "wound_photo.measured",
-              {"quality": analysis["quality"], "problems": analysis.get("problems"), "comparison": comparison},
-              "observation", obs.id)
-    from .integrations import d1_wound  # D1-F: OpenCV analysis + overlay now, vision-LLM reading in the runner
+    from .integrations import d1_wound  # the one analysis: OpenCV now, model + vision reading + rules in the runner
     d1_wound.process(repo, obs, data)
-    return repo.get(m.Observation, obs.id) or obs
+    obs = repo.get(m.Observation, obs.id) or obs
+    analysis = obs.value.get("analysis") or {}
+    audit.log(repo, patient_id, "code:wound_pipeline", "wound_photo.measured",
+              {"quality": analysis.get("quality"), "problems": analysis.get("problems"), "comparison": obs.value.get("comparison")},
+              "observation", obs.id)
+    return obs
 
 
 def demo_bytes(asset: str) -> bytes:

@@ -18,8 +18,8 @@ def test_dressing_change_photo_gets_code_analysis_overlay_and_vision_reading(rep
     assert d1["overlay_url"].startswith("/uploads/") and (wounds.UPLOADS / d1["overlay_url"].rsplit("/", 1)[-1]).exists()
     assert "staple" in d1["segmentation"]["method"]
     # the seeded reference photo is a different (real, openly licensed) patient: no fake "change" is reported
-    if d1["comparison"] is not None:
-        assert d1["comparison"]["available"] is False
+    assert d1["comparison"]["available"] is False
+    assert obs.value["comparison"]["available"] is False    # the patient view says the same (one analysis)
     vr = obs.value["vision_review"]
     assert vr["available"] and vr["mode"] == "stub" and "offline" in vr["uncertainty"].lower()
     assert obs.value.get("review_alert_id") is None
@@ -39,8 +39,8 @@ def test_patient_initiated_dressing_change_outside_the_window_needs_confirmation
 def test_code_rule_raises_a_clinician_only_review_alert(repo):
     obs = _dressing_photo(repo)
     obs.value = {**obs.value, "d1": {**obs.value["d1"], "comparison": {
-        "available": True, "trend": "more_red", "summary": "redder than the reference photo, and the redness extends beyond the wound edge",
-        "redness_change_delta_a": 7.0, "redness_spread_change": 5.0, "area_change_pct": 10}}}
+        "available": True, "trend": "stable_colour", "summary": "the marked area is about 45% larger",
+        "redness_change_delta_a": 0.5, "redness_spread_change": 0.0, "area_change_pct": 45}}}
     repo.add(obs)
     alert_id = d1_wound.decide(repo, obs)
     a = repo.get(m.Alert, alert_id)
@@ -109,7 +109,7 @@ def test_model_can_add_a_review_reason_but_never_remove_one(repo):
     assert d1_wound.decide(repo, obs) is not None
     obs2 = _dressing_photo(repo) if False else obs
     obs2.value = {**obs2.value, "review_alert_id": None, "model": {"available": True, "attributes": {"exudate": no}},
-                  "d1": {**obs2.value["d1"], "comparison": {"available": True, "trend": "more_red", "summary": "redder",
-                                                             "redness_change_delta_a": 8, "redness_spread_change": 5, "area_change_pct": 0}}}
+                  "d1": {**obs2.value["d1"], "comparison": {"available": True, "trend": "stable_colour", "summary": "larger",
+                                                             "redness_change_delta_a": 0, "redness_spread_change": 0, "area_change_pct": 40}}}
     repo.add(obs2)
     assert d1_wound.decide(repo, obs2) is not None  # a "no" from the model does not cancel the code's reason
