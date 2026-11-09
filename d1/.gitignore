@@ -8,3 +8,5 @@ models/chronos-bolt-tiny/model.safetensors
 *.egg-info/
 # pretrained MediaPipe models; scripts/fetch_neuro_models.sh downloads them
 models/mediapipe/*.task
+models/wound_seg/*.pt
+models/wound_seg/*.ckpt

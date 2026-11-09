@@ -203,16 +203,26 @@ class ClassicalSegmenter:
         return dilate(keep, ellipse(self.k.mask_dilate))
 
     def _finish(self, mask, lab, skin, bgr, how: str, staple_count: int | None = None) -> Segmentation:
-        """Size sanity checks + the peri-wound skin reference (the patient's own skin, a band 25-60 px away)."""
-        frac = float(mask.mean())
-        if frac < self.limits.min_wound_fraction:
-            return Segmentation(None, lab, bgr, reason="abnormal region too small to measure reliably")
-        band = dilate(mask, ellipse(self.k.reference_band_outer)) & ~dilate(mask, ellipse(self.k.reference_band_inner)) & skin
-        if band.sum() < 100:
-            band = skin & ~mask
-        return Segmentation(mask, lab, bgr, method=how, skin=skin, reference_lab=np.median(lab[band], axis=0),
-                            reference_std=lab[band].std(axis=0), too_large=frac > self.limits.max_wound_fraction,
-                            staple_count=staple_count)
+        return finish_segmentation(mask, lab, skin, bgr, how, self.limits, self.k, staple_count)
+
+
+def finish_segmentation(mask, lab, skin, bgr, how: str, limits: Limits, kernels: Kernels,
+                        staple_count: int | None = None) -> Segmentation:
+    """Size sanity checks + the peri-wound skin reference (the patient's own skin, a band 25-60 px away).
+
+    Shared by every segmenter (classical, learned) so the measurement stage always receives the same fields
+    computed the same way, whatever drew the mask."""
+    frac = float(mask.mean())
+    if frac < limits.min_wound_fraction:
+        return Segmentation(None, lab, bgr, reason="abnormal region too small to measure reliably")
+    band = dilate(mask, ellipse(kernels.reference_band_outer)) & ~dilate(mask, ellipse(kernels.reference_band_inner)) & skin
+    if band.sum() < 100:
+        band = skin & ~mask
+    if band.sum() == 0:                     # no skin at all around (e.g. a learned mask on a close-up)
+        band = ~mask
+    return Segmentation(mask, lab, bgr, method=how, skin=skin, reference_lab=np.median(lab[band], axis=0),
+                        reference_std=lab[band].std(axis=0), too_large=frac > limits.max_wound_fraction,
+                        staple_count=staple_count)
 
 
 # ------------------------------------------------------------------ small pure helpers
