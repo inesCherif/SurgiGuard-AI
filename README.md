@@ -2,6 +2,12 @@
 
 **Smarter Recovery. Safer Care.** A HackCure hackathon prototype for post-operative recovery at home: an ESP32 wearable, a .NET + MongoDB API, AI agents, mobile apps and one page that tells the whole story.
 
+> **2nd place at HackCure (October 2026)**, continued as a school project by Ines Cherif.
+> - **Run it without hardware:** [`docs/RUN_WITHOUT_HARDWARE.md`](docs/RUN_WITHOUT_HARDWARE.md), or simply `./scripts/demo.ps1`
+> - **Understand or rebuild it from zero:** [`docs/REBUILD_GUIDE.md`](docs/REBUILD_GUIDE.md) and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+> - **Wound computer vision:** [`docs/wound/HOW_V1_WORKS.md`](docs/wound/HOW_V1_WORKS.md) and [`docs/wound/PROBLEMS_AND_SOLUTIONS.md`](docs/wound/PROBLEMS_AND_SOLUTIONS.md)
+> - **Who did what:** [`CONTRIBUTIONS.md`](CONTRIBUTIONS.md)
+
 > Fictional patient only (Sarah Miller, 64, right total knee replacement). Not a medical device. Medical decisions stay with clinicians. WhatsApp and push notifications are **simulated** unless you enable them.
 
 ## How the pieces fit
