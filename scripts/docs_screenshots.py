@@ -80,32 +80,36 @@ def patient_flow(b):
     shot(pg, "app-06-home")
     shot(pg, "app-06-home-full", full=True)
 
-    def home():
-        tap(pg, "Home", exact=True)
-
     def assistant():
         tap(pg, "Ask about your recovery")
         pg.wait_for_timeout(1500)
         shot(pg, "app-07-assistant")
-        box = pg.locator("textarea, input[type=text], input:not([type])").last
-        box.fill("Can I shower with my dressing?")
-        box.press("Enter")
-        pg.wait_for_timeout(25_000)
+        pg.get_by_text("What does Enoxaparin do?").first.click()   # a suggestion chip sends the question
+        pg.wait_for_timeout(30_000)
         shot(pg, "app-07-assistant-answer")
-        pg.go_back()
-        pg.wait_for_timeout(1500)
     try_step("assistant", assistant)
+    patient_tabs(pg)
+    pg.context.close()
+
+
+def patient_tabs(pg):
+    """The app keeps its state in browser storage: reloading /app/ lands on Home with the tab bar."""
+    def home():
+        pg.goto(BASE + "/app/", wait_until="networkidle")
+        pg.wait_for_timeout(2500)
 
     def wound():
         home()
-        tap(pg, "Add a wound photo")
-        pg.wait_for_timeout(2000)
+        tap(pg, "Check-in", exact=True)
+        tap(pg, "Wound scan", exact=True)
+        pg.wait_for_timeout(3000)
         shot(pg, "app-08-wound-request")
         shot(pg, "app-08-wound-request-full", full=True)
     try_step("wound", wound)
 
     for tab, name in [("Check-in", "app-09-checkin"), ("Twin", "app-10-twin"), ("Reports", "app-11-reports"), ("Profile", "app-12-profile")]:
         def go(tab=tab, name=name):
+            home()
             tap(pg, tab, exact=True)
             pg.wait_for_timeout(3500)
             shot(pg, name)
@@ -118,7 +122,6 @@ def patient_flow(b):
         pg.wait_for_timeout(2500)
         shot(pg, "app-13-medications", full=True)
     try_step("medications", meds)
-    pg.context.close()
 
 
 def family_flow(b):

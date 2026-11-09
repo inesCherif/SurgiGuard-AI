@@ -4,6 +4,7 @@
 
 > **2nd place at HackCure (October 2026)**, continued as a school project by Ines Cherif.
 > - **Run it without hardware:** [`docs/RUN_WITHOUT_HARDWARE.md`](docs/RUN_WITHOUT_HARDWARE.md), or simply `./scripts/demo.ps1`
+> - **See every screen explained, with screenshots:** [`docs/INTERFACES.md`](docs/INTERFACES.md)
 > - **Understand or rebuild it from zero:** [`docs/REBUILD_GUIDE.md`](docs/REBUILD_GUIDE.md) and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 > - **Wound computer vision:** [`docs/wound/HOW_V1_WORKS.md`](docs/wound/HOW_V1_WORKS.md) and [`docs/wound/PROBLEMS_AND_SOLUTIONS.md`](docs/wound/PROBLEMS_AND_SOLUTIONS.md)
 > - **Who did what:** [`CONTRIBUTIONS.md`](CONTRIBUTIONS.md)
