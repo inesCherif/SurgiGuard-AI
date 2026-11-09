@@ -1,6 +1,7 @@
 """D1-F wound-photo analysis: the Facade over the pipeline stages.
 
-    load -> quality gate -> segmentation (Strategy) -> measurements -> [registration + comparison] -> overlay
+    load -> [calibration card: geometry + colour] -> quality gate -> segmentation (Strategy)
+         -> measurements (+ mm / mm² if calibrated) -> [registration + comparison] -> overlay
 
 Each stage lives in its own module with one responsibility (quality.py, segmentation.py, measurement.py,
 registration.py, render.py; colours in colour.py; every number in config.py). `WoundAnalyzer` only orchestrates
@@ -16,6 +17,7 @@ from __future__ import annotations
 import cv2
 
 from . import registration
+from .calibration import NOT_FOUND, CardCalibrator
 from .colour import load
 from .config import DEFAULT_KERNELS, DEFAULT_LIMITS, NOT_MEASURED, VERSION, Kernels, Limits
 from .measurement import measure
@@ -34,9 +36,10 @@ class WoundAnalyzer:
     """Orchestrates the stages. Stateless after construction, so one instance can serve concurrent requests."""
 
     def __init__(self, segmenter: Segmenter | None = None, limits: Limits = DEFAULT_LIMITS,
-                 kernels: Kernels = DEFAULT_KERNELS):
+                 kernels: Kernels = DEFAULT_KERNELS, calibrator: CardCalibrator | None = None):
         self.limits, self.kernels = limits, kernels
         self.segmenter = segmenter or ClassicalSegmenter(limits, kernels)
+        self.calibrator = calibrator or CardCalibrator()
 
     def analyze(self, data: bytes, reference: bytes | None = None) -> dict:
         """Full analysis of one photo, optionally compared with the patient's reference photo."""
@@ -46,21 +49,31 @@ class WoundAnalyzer:
             return {"version": VERSION, "quality": {"status": UNUSABLE, "problems": [f"not a readable image ({type(e).__name__})"]},
                     "measurements": None, "segmentation": {"found": False, "reason": "unreadable image"},
                     "not_measured": list(NOT_MEASURED)}
+        cal = self._calibrate(bgr)
+        if cal.colour is not None:            # white balance from the card's grey patches (linear RGB)
+            bgr = cal.colour.apply_bgr(bgr)
         quality = assess_quality(bgr, self.limits)
         out = {"version": VERSION, "method": METHOD, "quality": quality, "not_measured": list(NOT_MEASURED),
+               "calibration": cal.public(),
                "measurements": None, "comparison": None, "segmentation": {"found": False, "reason": "photo quality too low"},
                "_mask": None, "_bgr": bgr}
         if quality["status"] == UNUSABLE:
             return out
-        seg = self.segmenter.segment(bgr)
+        seg = self.segmenter.segment(bgr, ignore=cal.card_mask, px_per_mm=cal.px_per_mm)
         if not seg.found:
             out["segmentation"] = {"found": False, "reason": seg.reason}
             return out
-        m = measure(seg, self.limits, self.kernels)
+        m = measure(seg, self.limits, self.kernels.scaled(cal.px_per_mm), calibration=cal)
         out.update(_mask=seg.mask, measurements=m, segmentation=self._public_segmentation(seg, m))
         if reference is not None:
             out["comparison"] = self._compare_with(reference, out)
         return out
+
+    def _calibrate(self, bgr):
+        try:
+            return self.calibrator.calibrate(bgr)
+        except cv2.error:                     # a failed calibration must never lose the analysis
+            return NOT_FOUND
 
     def _compare_with(self, reference: bytes, current: dict) -> dict:
         ref = self.analyze(reference)

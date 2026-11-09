@@ -31,6 +31,7 @@ def patient_analysis(d1: dict | None) -> dict:
     if m:
         out["redness_area_pct"] = m["redness_area_pct"]
         out["redness_intensity"] = m["redness_mean_delta_a"]
+        out.update({k: m[k] for k in ("area_cm2", "length_mm", "width_mm") if k in m})   # calibration card present
     elif not d1.get("segmentation", {}).get("found") and out["quality"] != "unusable":
         out["problems"].append(d1.get("segmentation", {}).get("reason") or "no wound region found: centre the wound")
     return out

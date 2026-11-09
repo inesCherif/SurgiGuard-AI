@@ -599,6 +599,8 @@ function renderWoundClinic(w) {
         <table class="small" style="flex:1">${row('Photo quality', q.status + (q.problems?.length ? ' — ' + q.problems.join('; ') : ''))}
           ${row('Redness vs own skin (Δa*)', mm.redness_mean_delta_a)}${row('Red share of area', mm.redness_area_pct != null ? mm.redness_area_pct + ' %' : null)}
           ${row('Redness beyond edge (Δa*)', mm.redness_spread_ring_delta_a)}${row('Area (% of frame)', mm.wound_area_pct_of_frame)}
+          ${row('Calibration card', d.calibration?.found ? `found · ${d.calibration.px_per_mm} px/mm · tilt ${d.calibration.tilt_ratio}` + (d.calibration.colour_corrected ? ` · colour ΔE ${d.calibration.colour_error_delta_e.before} → ${d.calibration.colour_error_delta_e.after}` : '') : 'none: sizes relative to the frame')}
+          ${row('Real size', mm.area_mm2 != null ? `${mm.area_cm2} cm² · length ${mm.length_mm} mm · width ${mm.width_mm} mm` : null)}
           ${row('Staple-like bright marks', mm.closure_material?.staple_like_blobs)}${row('Dark / crust-coloured', mm.dark_crust_coloured_pct != null ? mm.dark_crust_coloured_pct + ' %' : null)}
           ${row('Pale-yellow regions', mm.pale_yellow_pct != null ? mm.pale_yellow_pct + ' %' : null)}</table></div>
       <div class="small" style="margin-top:6px"><b>Compared with the reference:</b> ${comp}</div>${renderWoundModel(p.model)}${vis}

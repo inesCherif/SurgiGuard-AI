@@ -45,7 +45,11 @@ def compare(ref: dict, cur: dict, reg: dict, limits: Limits = DEFAULT_LIMITS) ->
     if not reg.get("comparable"):
         return {"available": False, "reason": reg.get("reason", "not the same site"), "registration": public_registration(reg)}
     r, c = ref["measurements"], cur["measurements"]
-    area_ratio = c["wound_area_pct_of_frame"] / max(r["wound_area_pct_of_frame"], 1e-6) / reg["scale"] ** 2  # distance-corrected
+    if r.get("area_mm2") and c.get("area_mm2"):      # both calibrated: real areas, no camera-distance assumption
+        area_ratio, area_basis = c["area_mm2"] / r["area_mm2"], "mm2 (calibration card)"
+    else:                                            # frame share corrected by the registration scale
+        area_ratio = c["wound_area_pct_of_frame"] / max(r["wound_area_pct_of_frame"], 1e-6) / reg["scale"] ** 2
+        area_basis = "frame share, distance-corrected"
     d_area = round((area_ratio - 1) * 100)
     d_red = round(c["redness_mean_delta_a"] - r["redness_mean_delta_a"], 1)
     d_spread = round(c["redness_spread_ring_delta_a"] - r["redness_spread_ring_delta_a"], 1)
@@ -65,7 +69,7 @@ def compare(ref: dict, cur: dict, reg: dict, limits: Limits = DEFAULT_LIMITS) ->
     elif d_area <= -limits.area_change_pct:
         notes.append(f"the marked area is about {-d_area}% smaller (after correcting for distance)")
     return {"available": True, "trend": trend, "summary": "; ".join(notes), "redness_change_delta_a": d_red,
-            "redness_spread_change": d_spread, "area_change_pct": d_area,
+            "redness_spread_change": d_spread, "area_change_pct": d_area, "area_basis": area_basis,
             "redness_area_ref_pct": r["redness_area_pct"], "redness_area_now_pct": c["redness_area_pct"],
             "registration": public_registration(reg),
             "quality": QUESTIONABLE if QUESTIONABLE in statuses else "good",

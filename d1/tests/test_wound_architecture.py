@@ -25,7 +25,7 @@ class _FixedSquareSegmenter:
     """A test double: proves the pipeline only depends on the Segmenter interface (Dependency Inversion)."""
     name = "fixed-square"
 
-    def segment(self, bgr):
+    def segment(self, bgr, ignore=None, px_per_mm=None):
         h, w = bgr.shape[:2]
         mask = np.zeros((h, w), bool)
         mask[h // 3:2 * h // 3, w // 3:2 * w // 3] = True

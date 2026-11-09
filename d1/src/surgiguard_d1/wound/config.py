@@ -4,7 +4,7 @@ Keeping thresholds and kernel sizes here (not scattered as literals in the code)
 one file to calibrate, and the analysis functions stay free of magic numbers.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 
 VERSION = "wound-cv-0.2"
 MAX_SIDE = 640  # every photo is analysed at this resolution (longest side, px)
@@ -36,8 +36,9 @@ class Limits:
 class Kernels:
     """Structuring-element and band sizes in pixels, for a MAX_SIDE image.
 
-    Known limitation (v1 audit A5): these are fixed pixel sizes, so their physical size depends on the camera
-    distance. The calibration card (v2 step 2) replaces them with sizes in millimetres.
+    v1 audit A5: fixed pixel sizes have a physical size that depends on the camera distance (a 7 px margin is
+    1.4 mm close up and 2 mm further away). When the calibration card gives the scale, `scaled()` converts them
+    so they keep the same size in MILLIMETRES (journal V13). Defaults are the sizes at NOMINAL_PX_PER_MM.
     """
     skin_open: int = 3
     near_skin_dilate: int = 15
@@ -51,6 +52,15 @@ class Kernels:
     spread_ring: int = 25              # ring just outside the wound where spreading redness is measured
     closure_search: int = 31
 
+    def scaled(self, px_per_mm: float | None) -> "Kernels":
+        """Same physical sizes at another scale (odd sizes, at least 3 px). None -> unchanged."""
+        if not px_per_mm:
+            return self
+        f = px_per_mm / NOMINAL_PX_PER_MM
+        return replace(self, **{fl.name: max(3, int(round(getattr(self, fl.name) * f)) | 1) for fl in fields(self)})
+
+
+NOMINAL_PX_PER_MM = 5.0   # scale at which the default Kernels apply (a 640 px photo of ~13 cm of skin)
 
 DEFAULT_LIMITS = Limits()
 DEFAULT_KERNELS = Kernels()

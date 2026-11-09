@@ -8,7 +8,16 @@ from .config import DEFAULT_KERNELS, DEFAULT_LIMITS, Kernels, Limits
 from .segmentation import Segmentation
 
 
-def measure(seg: Segmentation, limits: Limits = DEFAULT_LIMITS, kernels: Kernels = DEFAULT_KERNELS) -> dict:
+def measure(seg: Segmentation, limits: Limits = DEFAULT_LIMITS, kernels: Kernels = DEFAULT_KERNELS,
+            calibration=None) -> dict:
+    """calibration: a found `Calibration` adds real sizes (mm, mm², cm²) measured through the card homography."""
+    out = _relative_measurements(seg, limits, kernels)
+    if calibration is not None and calibration.found:
+        out.update(calibration.metric_size(seg.mask), size_basis="mm (calibration card)")
+    return out
+
+
+def _relative_measurements(seg: Segmentation, limits: Limits, kernels: Kernels) -> dict:
     mask, lab, ref = seg.mask, seg.lab, seg.reference_lab
     h, w = mask.shape
     pix = lab[mask]

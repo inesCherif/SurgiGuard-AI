@@ -42,7 +42,10 @@ class Segmenter(Protocol):
     """Strategy interface: any wound segmenter (classical, learned, ...)."""
     name: str
 
-    def segment(self, bgr: np.ndarray) -> Segmentation: ...
+    def segment(self, bgr: np.ndarray, ignore: np.ndarray | None = None,
+                px_per_mm: float | None = None) -> Segmentation:
+        """ignore: pixels that are not skin by construction (the calibration card).
+        px_per_mm: known scale (calibration card); segmenters that use pixel sizes should convert them."""
 
 
 @dataclass(frozen=True)
@@ -73,15 +76,25 @@ class ClassicalSegmenter:
         self.limits, self.k = limits, kernels
 
     # ---------------------------------------------------------------- public
-    def segment(self, bgr: np.ndarray) -> Segmentation:
+    def segment(self, bgr: np.ndarray, ignore: np.ndarray | None = None,
+                px_per_mm: float | None = None) -> Segmentation:
+        if px_per_mm:   # calibrated: same kernel sizes in millimetres whatever the camera distance
+            return ClassicalSegmenter(self.limits, self.k.scaled(px_per_mm))._segment(bgr, ignore)
+        return self._segment(bgr, ignore)
+
+    def _segment(self, bgr: np.ndarray, ignore: np.ndarray | None) -> Segmentation:
         # No global white balance: when skin fills the frame, grey-world would turn the skin grey. Every measure
         # is relative to the surrounding skin of the same photo, which already cancels the colour of the light.
         lab = to_lab(bgr)
         skin = skin_mask(bgr, self.k)
+        if ignore is not None:          # the card's white/black/patches must never count as skin or wound
+            skin &= ~ignore
         if skin.mean() < self.limits.min_skin_fraction * 0.5:
             return Segmentation(None, lab, bgr, reason="no skin found around the site")
         near_skin = cv2.dilate(skin.astype(np.uint8), np.ones((self.k.near_skin_dilate,) * 2, np.uint8)) > 0
-        score = self._score(bgr, lab, skin, near_skin)
+        if ignore is not None:
+            near_skin &= ~ignore
+        score = self._score(bgr, lab, skin, near_skin, ignore)
         thr = max(float(np.percentile(score[near_skin], 96)), 3.0)
 
         chain = self._staple_chain(bgr, near_skin)
@@ -98,14 +111,15 @@ class ClassicalSegmenter:
         return self._finish(mask, lab, skin, bgr, "local redness/darkness, strongest elongated structure")
 
     # ---------------------------------------------------------------- steps
-    def _score(self, bgr, lab, skin, near_skin) -> np.ndarray:
+    def _score(self, bgr, lab, skin, near_skin, ignore=None) -> np.ndarray:
         """Per-pixel "abnormality": local redness + 0.7 local darkness, ink excluded, plus bright metal."""
         h, w = lab.shape[:2]
         sigma = max(h, w) / 18.0
         L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
-        a_loc = a - cv2.GaussianBlur(a, (0, 0), sigma)
-        dark_loc = cv2.GaussianBlur(L, (0, 0), sigma) - L
-        b_loc = b - cv2.GaussianBlur(b, (0, 0), sigma)
+        background = _background(sigma, ignore)
+        a_loc = a - background(a)
+        dark_loc = background(L) - L
+        b_loc = b - background(b)
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
         metal = ((hsv[..., 2] > 200) & (hsv[..., 1] < 50)).astype(np.float32)
         # Surgical-marker ink and bruises are purple/blue (b* drops); wound redness is red-orange.
@@ -202,6 +216,20 @@ class ClassicalSegmenter:
 
 
 # ------------------------------------------------------------------ small pure helpers
+
+def _background(sigma: float, ignore: np.ndarray | None):
+    """Local background estimator: a Gaussian blur, or a NORMALIZED CONVOLUTION when some pixels must be ignored.
+
+    blur(x * w) / blur(w) with w = 0 on ignored pixels (e.g. the white calibration card): without it, the bright
+    card leaks into the background of the skin next to it, which then looks "darker than its surroundings" and is
+    segmented as a wound (journal V12).
+    """
+    if ignore is None or not ignore.any():
+        return lambda x: cv2.GaussianBlur(x, (0, 0), sigma)
+    weight = (~ignore).astype(np.float32)
+    norm = np.maximum(cv2.GaussianBlur(weight, (0, 0), sigma), 1e-3)
+    return lambda x: cv2.GaussianBlur(x * weight, (0, 0), sigma) / norm
+
 
 def _largest_component(adj: np.ndarray) -> list[int]:
     """Largest connected group in a boolean adjacency matrix (iterative DFS)."""
