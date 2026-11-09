@@ -132,7 +132,7 @@ These are the problems found by reading and testing v1 line by line. They define
 
 ## Step 1: architecture clean-up (Nov 2026)
 
-Design rationale: [V2_ARCHITECTURE.md](V2_ARCHITECTURE.md).
+Design rationale: [03_V2_ARCHITECTURE.md](03_V2_ARCHITECTURE.md).
 
 ### V6. A 430-line file did everything
 - **Problem:** `pipeline.py` mixed loading, colour conversion, quality, segmentation, measurement, registration and drawing. Thresholds and kernel sizes were literals spread through it. Swapping the segmenter (step 3) would have meant editing everything.

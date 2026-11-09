@@ -29,10 +29,10 @@
 12. [Troubleshooting](#12-troubleshooting)
 
 Companion documents:
-- [`ARCHITECTURE.md`](ARCHITECTURE.md): short overview.
-- [`RUN_WITHOUT_HARDWARE.md`](RUN_WITHOUT_HARDWARE.md): quick start.
-- [`wound/HOW_V1_WORKS.md`](wound/HOW_V1_WORKS.md): wound computer vision in depth.
-- [`wound/PROBLEMS_AND_SOLUTIONS.md`](wound/PROBLEMS_AND_SOLUTIONS.md): engineering journal.
+- [`02_ARCHITECTURE.md`](02_ARCHITECTURE.md): short overview.
+- [`01_RUN_WITHOUT_HARDWARE.md`](01_RUN_WITHOUT_HARDWARE.md): quick start.
+- [`wound/01_HOW_V1_WORKS.md`](wound/01_HOW_V1_WORKS.md): wound computer vision in depth.
+- [`wound/02_PROBLEMS_AND_SOLUTIONS.md`](wound/02_PROBLEMS_AND_SOLUTIONS.md): engineering journal.
 
 ---
 
@@ -146,7 +146,7 @@ observation → alert → acknowledged → clinical decision → instructions de
 | D1 Patient Twin | `PersistenceForecaster`, `TrendForecaster` (optional `ChronosForecaster`) with an 80% band | forecasting | a more complex method is used only if a backtest shows it is better; abstains otherwise |
 | D1 rehab | MediaPipe landmarks → joint angles (hip-knee-ankle), smoothing, rep counter, range of motion | geometry | prescription engine by surgery and post-op day |
 | D1 movement tests | 6 camera tests (arm drift, face symmetry, finger tapping, eye movement…) comparing left and right | geometry/statistics | engineering cut-offs, not clinically validated |
-| D1 wound A | OpenCV: Laplacian sharpness, YCrCb skin mask, CIELAB local contrast, top-hat staple detection, ORB + RANSAC registration | classical CV | see `wound/HOW_V1_WORKS.md` |
+| D1 wound A | OpenCV: Laplacian sharpness, YCrCb skin mask, CIELAB local contrast, top-hat staple detection, ORB + RANSAC registration | classical CV | see `wound/01_HOW_V1_WORKS.md` |
 | D1 wound B | **CLIP ViT-B/16 (frozen)** + 6 logistic-regression heads trained on **SurgWound** (686 photos) | transfer learning | test AUROC 0.76–0.84; out-of-distribution gate; occlusion map |
 | D1 wound C | Vision LLM: Groq Qwen 3.8 27B (was Llama-4-Scout) / Mistral Pixtral / Gemma-3 | VLM | describes, never diagnoses; JSON output; guarded |
 
@@ -327,7 +327,7 @@ This followed the team's "Backend step 1…10" commits. Write it in this order:
 | 3 | `patient_twin/` | near-term forecast of the patient's own HR/SpO2 with an 80% band: persistence, then trend (Chronos optional). It **abstains** with too little data. `backtest.py` decides whether a more complex method is worth it. |
 | 4 | `rehab/` | `prescription.py` (exercises by surgery and post-op day, clinician limits); `angles.py` (joint angles from MediaPipe landmarks, smoothing); `exercises/` (knee flexion, leg raise, ankle pumps: rep counter, range of motion, hold time); `session.py`, `evaluator.py` |
 | 5 | `neuro/` | 6 guided movement tests from video landmarks, comparing left and right; "attention" only, never an emergency |
-| 6 | `wound/config.py` → `colour.py` → `quality.py` → `segmentation.py` → `measurement.py` → `registration.py` → `render.py` → `pipeline.py` (Facade) → `model_bundle.py` → `model.py` → `scripts/prepare_surgwound.py` → `train_wound_model.py` → `export_wound_heads.py` → `models/` | wound computer vision: **[wound/V2_ARCHITECTURE.md](wound/V2_ARCHITECTURE.md)** (structure, patterns), **[wound/HOW_V1_WORKS.md](wound/HOW_V1_WORKS.md)** (algorithms) |
+| 6 | `wound/config.py` → `colour.py` → `quality.py` → `segmentation.py` → `measurement.py` → `registration.py` → `render.py` → `pipeline.py` (Facade) → `model_bundle.py` → `model.py` → `scripts/prepare_surgwound.py` → `train_wound_model.py` → `export_wound_heads.py` → `models/` | wound computer vision: **[wound/03_V2_ARCHITECTURE.md](wound/03_V2_ARCHITECTURE.md)** (structure, patterns), **[wound/01_HOW_V1_WORKS.md](wound/01_HOW_V1_WORKS.md)** (algorithms) |
 
 **Check:** `cd d1; python -m pytest -q`.
 
@@ -438,7 +438,7 @@ start http://localhost:8000/story
 | Simulator without a broker | `python scripts/simulate_device_mqtt.py --dry-run --seconds 5` |
 | Simulator over HTTP (bypassing MQTT) | `python SurgiGuard/Backend/scripts/simulate_esp32.py --api http://localhost:5051 --profile desat --seconds 60` |
 | Vitals straight into the AI backend | `cd backend; .venv\Scripts\python -m seed.simulator --url http://localhost:8000 --scenario infection_pattern --every 5` |
-| Wound CV on one photo | see `wound/HOW_V1_WORKS.md` §10 |
+| Wound CV on one photo | see `wound/01_HOW_V1_WORKS.md` §10 |
 | Live AI | put `GROQ_API_KEY=...` (and `MISTRAL_API_KEY=...` for OCR of scans) in `backend/.env`, then restart the backend; `/health` shows `llm_mode: live` |
 | Reset the demo | `curl.exe -X POST http://localhost:8000/demo/reset` |
 | MQTT traffic | `docker exec -it mqtt mosquitto_sub -t Hackcure/data -v` |

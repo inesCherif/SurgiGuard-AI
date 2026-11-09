@@ -66,7 +66,7 @@ The AI work was split between three developer roles, D1, D2 and D3 (see `context
 ### D1 — Recovery Twin, rehab and wound photos (`d1/`)
 - **Expected recovery trajectory and patient twin:** what a normal recovery looks like for this surgery on day N, compared with what is observed.
 - **Rehab:** exercise prescription, plus on-device pose estimation (MediaPipe) that counts repetitions and range of motion.
-- **Wound photos at dressing changes:** an OpenCV pipeline, a trained model and a vision-LLM description. The full explanation is in [`docs/wound/HOW_V1_WORKS.md`](wound/HOW_V1_WORKS.md).
+- **Wound photos at dressing changes:** an OpenCV pipeline, a trained model and a vision-LLM description. The full explanation is in [`docs/wound/01_HOW_V1_WORKS.md`](wound/01_HOW_V1_WORKS.md).
 
 ### D2 — Documents to care plan (`backend/app/services/ocr_service.py`, `backend/app/agents/protocol.py`)
 1. The patient or clinician uploads a discharge letter or prescription.
@@ -90,7 +90,7 @@ The AI work was split between three developer roles, D1, D2 and D3 (see `context
 
 ## Data flow of one wound photo
 
-The details are in [`docs/wound/HOW_V1_WORKS.md`](wound/HOW_V1_WORKS.md).
+The details are in [`docs/wound/01_HOW_V1_WORKS.md`](wound/01_HOW_V1_WORKS.md).
 
 1. The phone camera takes the photo after the patient confirms the dressing change. It goes to `POST /patients/{id}/wound-photos`.
 2. **OpenCV analysis** runs immediately: quality check, segmentation, measurements and comparison with the day-1 photo.

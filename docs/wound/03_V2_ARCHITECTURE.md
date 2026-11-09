@@ -5,7 +5,7 @@ How the wound-photo code is organised after v2 step 1 (November 2026):
 - which design principles and patterns it uses, and where;
 - how to extend it safely.
 
-The problems that drove each decision are in [PROBLEMS_AND_SOLUTIONS.md](PROBLEMS_AND_SOLUTIONS.md) (entries V6–V10). The v1 baseline is in [HOW_V1_WORKS.md](HOW_V1_WORKS.md).
+The problems that drove each decision are in [02_PROBLEMS_AND_SOLUTIONS.md](02_PROBLEMS_AND_SOLUTIONS.md) (entries V6–V10). The v1 baseline is in [01_HOW_V1_WORKS.md](01_HOW_V1_WORKS.md).
 
 ---
 

@@ -119,7 +119,7 @@ The **Wound scan** tile is on the Check-in screen above. The full analysis resul
 - The patient sees the outline, the quality check, the comparison with the first photo, and 4 attributes in plain words.
 - The patient **never** sees "risk" or "urgency"; those are for the clinician.
 
-The full pipeline is in [wound/HOW_V1_WORKS.md](wound/HOW_V1_WORKS.md), and the clinician view is in §4.2.
+The full pipeline is in [wound/01_HOW_V1_WORKS.md](wound/01_HOW_V1_WORKS.md), and the clinician view is in §4.2.
 
 ### 2.7 Recovery Twin
 ![Twin](images/app-10-twin.png)

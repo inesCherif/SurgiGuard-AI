@@ -11,7 +11,7 @@ The real firmware (SurgiGuard/IOT/src/network.cpp) publishes once per second on 
 This script sends the same JSON to an MQTT broker, so the whole real chain is exercised:
     simulator -> MQTT broker -> .NET MqttBridgeService -> MongoDB -> AI backend (polls every 3 s) -> apps
 
-Usage (local broker from docker-compose, see docs/RUN_WITHOUT_HARDWARE.md):
+Usage (local broker from docker-compose, see docs/01_RUN_WITHOUT_HARDWARE.md):
     python scripts/simulate_device_mqtt.py                         # normal readings, forever
     python scripts/simulate_device_mqtt.py --profile desat --seconds 60
     python scripts/simulate_device_mqtt.py --profile story          # scripted scenario, phases below

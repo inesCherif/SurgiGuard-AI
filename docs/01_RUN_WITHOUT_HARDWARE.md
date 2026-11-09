@@ -4,7 +4,7 @@ Everything runs on one Windows PC.
 - The wearable is replaced by a **virtual ESP32**. It publishes the board's exact MQTT message through a local broker, so the real data path is used: MQTT → .NET API → MongoDB → AI backend.
 - The phone app runs **in the browser**.
 
-The full explanation is in [`REBUILD_GUIDE.md`](REBUILD_GUIDE.md).
+The full explanation is in [`04_REBUILD_GUIDE.md`](04_REBUILD_GUIDE.md).
 
 ## Requirements
 Docker Desktop (running), Python 3.11, Node 22. API keys are optional.

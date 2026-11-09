@@ -34,6 +34,6 @@ The history has deliberately **not** been rewritten, so it stays exactly as it w
 
 Every commit after the hackathon is authored by Ines Cherif:
 
-- The system runs end to end **without hardware**: a virtual ESP32 publishes over MQTT, and a local broker runs in Docker. See `docs/RUN_WITHOUT_HARDWARE.md`.
+- The system runs end to end **without hardware**: a virtual ESP32 publishes over MQTT, and a local broker runs in Docker. See `docs/01_RUN_WITHOUT_HARDWARE.md`.
 - Documentation of the whole system and of the wound pipeline: `docs/`.
 - **Wound CV v2**: calibration, learned segmentation, a better classifier and honest benchmarks. See `docs/wound/`.

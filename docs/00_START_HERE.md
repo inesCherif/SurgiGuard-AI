@@ -1,0 +1,30 @@
+# Start here: reading order
+
+The files are numbered, so read them in that order. Each line says what you will learn and roughly how long it takes.
+
+## Part A: the whole project (`docs/`)
+
+| # | File | What you learn | Time |
+|---|---|---|---|
+| 00 | **this file** | the reading order | 1 min |
+| 01 | [01_RUN_WITHOUT_HARDWARE.md](01_RUN_WITHOUT_HARDWARE.md) | start everything on a PC, with no ESP32 and no phone | 5 min |
+| 02 | [02_ARCHITECTURE.md](02_ARCHITECTURE.md) | the problem, the 5 programs, how a reading and a photo flow through them | 10 min |
+| 03 | [03_INTERFACES.md](03_INTERFACES.md) | every screen with a screenshot: what it shows and which code or AI is behind it | 15 min |
+| 04 | [04_REBUILD_GUIDE.md](04_REBUILD_GUIDE.md) | rebuild the project from zero, file by file in build order; every model, command, config and fix | 45 min |
+
+## Part B: wound computer vision, my part (`docs/wound/`)
+
+| # | File | What you learn | Time |
+|---|---|---|---|
+| 01 | [wound/01_HOW_V1_WORKS.md](wound/01_HOW_V1_WORKS.md) | the hackathon pipeline, stage by stage: quality gate, CIELAB segmentation, staples, ORB registration, CLIP model, vision LLM, review rule | 30 min |
+| 02 | [wound/02_PROBLEMS_AND_SOLUTIONS.md](wound/02_PROBLEMS_AND_SOLUTIONS.md) | the engineering journal: every problem met, its cause, the fix and the proof (hackathon P1–P13, audit A1–A9, v2 V1–V10…) | 20 min |
+| 03 | [wound/03_V2_ARCHITECTURE.md](wound/03_V2_ARCHITECTURE.md) | v2 design: module map, GoF patterns, SOLID, DRY, CV best practices, how the refactor was proven safe | 20 min |
+| 04 | wound/04_CALIBRATION.md *(v2 step 2, in progress)* | calibration card: perspective, white balance, real size in mm and cm² | — |
+
+**To prepare an interview or the defence:** read B-01 for *what* it does, B-02 for *what went wrong and how I solved it*, and B-03 for *how it is engineered*.
+
+## Other reference files
+- [`../README.md`](../README.md): project summary and the original run instructions
+- [`../CONTRIBUTIONS.md`](../CONTRIBUTIONS.md): who did what
+- [`../d1/models/WOUND_MODEL_CARD.md`](../d1/models/WOUND_MODEL_CARD.md): the trained model's data, method and test results
+- `../PROJECT.md`, `../INTEGRATION.md`: the team's hackathon brief and integration notes

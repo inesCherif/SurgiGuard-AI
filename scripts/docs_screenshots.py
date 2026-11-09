@@ -1,4 +1,4 @@
-"""Take the screenshots used in docs/INTERFACES.md.
+"""Take the screenshots used in docs/03_INTERFACES.md.
 
 Needs the AI backend on :8000 (live or stub). The .NET API is optional (the app uses demo mode).
 
