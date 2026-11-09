@@ -46,13 +46,24 @@ def _val_dice(model, loader, device) -> float:
 def train(args) -> Path:
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    samples = [s for root in args.train for s in MaskFolder(Path(root))]
-    tr, va = split(samples, 0.1, args.seed)
-    print(f"{len(tr)} train / {len(va)} val images, device {device}")
+    # Split each root separately, THEN oversample its training part (weight w = repeat w times): a photo can never
+    # be in both train and validation, and a small root (our 120 incisions) still weighs in the training mix.
+    weights = args.weights or [1] * len(args.train)
+    samples, tr, va = [], [], []
+    for root, w in zip(args.train, weights):
+        own = list(MaskFolder(Path(root)))
+        t, v = split(own, 0.1, args.seed)
+        samples += own
+        tr += t * int(w)
+        va += v
+    print(f"{len(tr)} train items / {len(va)} val images (weights {weights}), device {device}")
     tl = DataLoader(SegDataset(prepare(tr, args.size), True, args.seed), batch_size=args.batch, shuffle=True,
                     drop_last=True)
     vl = DataLoader(SegDataset(prepare(va, args.size), False), batch_size=args.batch)
-    model = ResNetUNet(pretrained=True).to(device)
+    model = ResNetUNet(pretrained=args.init is None).to(device)
+    if args.init:      # fine-tuning: start from an already trained model (e.g. the FUSeg one) instead of ImageNet
+        model.load_state_dict(torch.load(args.init, map_location=device, weights_only=True))
+        print("initialised from", args.init)
     opt = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.epochs * len(tl))
     scaler = torch.amp.GradScaler(enabled=device == "cuda")
@@ -67,7 +78,7 @@ def train(args) -> Path:
         for obj, key in ((model, "model"), (opt, "opt"), (sched, "sched"), (scaler, "scaler")):
             obj.load_state_dict(st[key])
         best, best_epoch, history, start = st["best"], st["best_epoch"], st["history"], st["epoch"]
-        torch.set_rng_state(st["torch_rng"])
+        torch.set_rng_state(st["torch_rng"].cpu())   # map_location moved it to the GPU (journal V21)
         tl.dataset.rng = st["aug_rng"]
         print(f"resumed after epoch {start} (best val dice {best:.4f} at epoch {best_epoch})")
     for epoch in range(start, args.epochs):
@@ -102,11 +113,22 @@ def train(args) -> Path:
     return out.with_suffix(".onnx")
 
 
+def export_only(args) -> Path:
+    """Export the best weights without loading any training photo (the export needs ~1 GB; journal V21)."""
+    out = Path(args.out)
+    st = torch.load(Path(str(out) + "_last.ckpt"), map_location="cpu", weights_only=False)
+    model = ResNetUNet(pretrained=False)
+    model.load_state_dict(torch.load(out.with_suffix(".pt"), map_location="cpu", weights_only=True))
+    n = sum(len(MaskFolder(Path(r))) for r in args.train)
+    _export(model.eval(), out, args, samples=n, best=st["best"], best_epoch=st["best_epoch"], history=st["history"])
+    return out.with_suffix(".onnx")
+
+
 def _export(model, out: Path, args, **info) -> None:
     torch.onnx.export(model, torch.zeros(1, 3, args.size, args.size), str(out.with_suffix(".onnx")),
                       input_names=["image"], output_names=["logits"], opset_version=17)
     card = {"input_size": args.size, "threshold": 0.5, "version": args.version,
-            "trained_on": [str(Path(r).name) for r in args.train],
+            "trained_on": [f"{Path(r).parent.name}/{Path(r).name}" for r in args.train], "weights": args.weights, "init": args.init,
             "scores": {"val_dice_network_res": info["best"], "best_epoch": info["best_epoch"],
                        "n_labelled_train_val": info["samples"]},
             "architecture": "U-Net, ResNet18 encoder (ImageNet), BCE + soft Dice, AdamW + OneCycle, AMP",
@@ -131,7 +153,7 @@ def benchmark(onnx_path: Path, test_roots, out: Path) -> dict:
     learned = results[next(k for k in results if k.startswith("learned"))]
     card["scores"].update({f"test_{k}": learned[k] for k in ("dice_mean", "iou_mean", "precision_mean",
                                                             "recall_mean", "width_ratio_median", "n_images")})
-    card["tested_on"] = [str(Path(r).name) for r in test_roots]
+    card["tested_on"] = [f"{Path(r).parent.name}/{Path(r).name}" for r in test_roots]
     card_path.write_text(json.dumps(card, indent=2), encoding="utf-8")
     return results
 
@@ -148,8 +170,16 @@ if __name__ == "__main__":
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--patience", type=int, default=10)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--weights", nargs="+", type=int, help="oversampling factor per --train root (default 1 each)")
+    ap.add_argument("--init", help="start from these weights (.pt) instead of ImageNet: fine-tuning")
     ap.add_argument("--resume", action="store_true", help="continue from <out>_last.ckpt after a crash")
+    ap.add_argument("--export-only", action="store_true", help="export <out>.pt to ONNX (after training) and benchmark")
     ap.add_argument("--benchmark-only", action="store_true", help="skip training, score an existing <out>.onnx")
     a = ap.parse_args()
-    onnx = Path(a.out).with_suffix(".onnx") if a.benchmark_only else train(a)
+    if a.benchmark_only:
+        onnx = Path(a.out).with_suffix(".onnx")
+    elif a.export_only:
+        onnx = export_only(a)
+    else:
+        onnx = train(a)
     benchmark(onnx, a.test, Path(str(Path(a.out)) + "_benchmark.json"))

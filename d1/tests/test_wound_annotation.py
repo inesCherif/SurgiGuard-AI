@@ -84,3 +84,14 @@ def test_mask_of_the_wrong_size_is_an_error(tmp_path):
     store.write_mask(store.images_dir / "x.png", np.zeros((10, 10), bool))
     with pytest.raises(ValueError):
         list(store)
+
+
+def test_snap_moves_a_misplaced_stroke_onto_the_cut_but_not_further_than_the_radius():
+    from surgiguard_d1.wound.annotation import snap_stroke
+    img = np.full((200, 300, 3), (150, 170, 215), np.uint8)
+    img[118:124, 40:260] = (60, 50, 150)                 # the real cut is centred on row 121
+    clicked = [(50, 110), (150, 111), (250, 109)]        # annotator clicked ~11 px too high
+    snapped = snap_stroke(img, clicked, radius=15)
+    assert all(abs(y - 121) <= 2 for _, y in snapped)
+    far = snap_stroke(img, [(50, 60), (150, 60), (250, 60)], radius=15)   # nothing within reach: stays put
+    assert all(abs(y - 60) <= 15 for _, y in far)

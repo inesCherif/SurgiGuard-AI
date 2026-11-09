@@ -130,3 +130,45 @@ def preview(bgr: np.ndarray, ann: Annotation, alpha: float = 0.45) -> np.ndarray
         for p in pts:
             cv2.circle(out, p, 3, (0, 0, 255), -1, cv2.LINE_AA)
     return out
+
+
+def ridge_map(bgr: np.ndarray) -> np.ndarray:
+    """How much each pixel looks like a cut line: darker and redder than its local surroundings (CIELAB).
+
+    Used only to snap hand-placed stroke points (see `snap_stroke`); deliberately simple and local."""
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB).astype(np.float32)
+    sigma = max(bgr.shape[:2]) / 40.0
+    L, a = lab[..., 0], lab[..., 1]
+    dark = cv2.GaussianBlur(L, (0, 0), sigma) - L
+    red = a - cv2.GaussianBlur(a, (0, 0), sigma)
+    r = np.maximum(dark, 0) / (dark.std() + 1e-6) + np.maximum(red, 0) / (red.std() + 1e-6)
+    return cv2.GaussianBlur(r, (0, 0), max(1.0, max(bgr.shape[:2]) / 400.0))
+
+
+def snap_stroke(bgr: np.ndarray, points: list[Point], radius: int, ridge: np.ndarray | None = None) -> list[Point]:
+    """Move each stroke point sideways (along the local normal, at most `radius` px) onto the strongest ridge.
+
+    The annotator decides WHERE the incision is; snapping only fixes the precision of the clicks (a few % of the
+    photo, which is the whole width of a thin incision). Offsets are smoothed between neighbours so the line
+    cannot zig-zag between two structures."""
+    pts = np.asarray(points, np.float32)
+    if len(pts) < 2 or radius < 1:
+        return [tuple(map(int, p)) for p in pts]
+    ridge = ridge_map(bgr) if ridge is None else ridge
+    h, w = ridge.shape
+    tang = np.gradient(pts, axis=0)
+    tang /= np.linalg.norm(tang, axis=1, keepdims=True) + 1e-6
+    normal = np.stack([-tang[:, 1], tang[:, 0]], axis=1)
+    offsets = np.arange(-radius, radius + 1, dtype=np.float32)
+    best = np.zeros(len(pts), np.float32)
+    for i, (p, n) in enumerate(zip(pts, normal)):
+        cand = p[None] + offsets[:, None] * n[None]
+        xs = np.clip(np.round(cand[:, 0]).astype(int), 0, w - 1)
+        ys = np.clip(np.round(cand[:, 1]).astype(int), 0, h - 1)
+        best[i] = offsets[int(np.argmax(ridge[ys, xs]))]
+    if len(best) >= 3:                                   # neighbour smoothing (median of 3)
+        best = np.array([np.median(best[max(0, i - 1):i + 2]) for i in range(len(best))], np.float32)
+    out = pts + best[:, None] * normal
+    out[:, 0] = np.clip(out[:, 0], 0, w - 1)
+    out[:, 1] = np.clip(out[:, 1], 0, h - 1)
+    return [(int(round(x)), int(round(y))) for x, y in out]
