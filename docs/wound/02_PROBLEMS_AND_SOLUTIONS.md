@@ -211,6 +211,12 @@ Method and results: [04_CALIBRATION.md](04_CALIBRATION.md).
 - **Why:** this is not the calibration (on the true outline it is within 5%). The classical segmenter deliberately grows its mask by about 1.4 mm on each side so the edge is never missed.
 - **Decision:** keep it for now and **report it**. Calibration makes the segmentation error measurable in millimetres; step 3 (learned segmentation, Dice/IoU against true outlines) is the fix.
 
+### V15. Dice looked fine while the width was doubled (why the benchmark has a width ratio)
+- **Problem:** to compare the classical and the future learned segmenter we need one score. On a long incision drawn twice too wide, Dice is still **0.67**, which reads as "acceptable".
+- **Why:** Dice and IoU are area overlaps. For a long thin shape the extra margin is spread along the length, so the overlap stays high while the width, the clinically useful number, is 2x wrong.
+- **Fix:** `seg_eval.py` reports a **width ratio** (predicted / true mean width, area / rotated-rectangle length) next to Dice, IoU, precision and recall, and one `SegmenterBenchmark` scores every `Segmenter` with the same code.
+- **Check:** synthetic test (Dice 0.67, width ratio 2.0); classical baseline on a synthetic cut: recall 1.00, precision 0.59, width ratio 1.65, matching V14. See [05_SEGMENTATION.md](05_SEGMENTATION.md).
+
 ### Note: memory and test isolation
 - Two backend tests failed once, only in the full suite, right after the backend was force-stopped while memory was nearly exhausted. Two clean full runs then gave 194/194.
 - Separately, a test that loads CLIP crashed with an access violation while the running backend held another CLIP copy (see V5).
