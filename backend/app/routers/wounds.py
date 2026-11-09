@@ -64,13 +64,15 @@ def wound_photo_detail(patient_id: str, observation_id: str, repo: Repo = Depend
 
 @router.post("/patients/{patient_id}/wound-photos/{observation_id}/review")
 def rerun_wound_review(patient_id: str, observation_id: str, repo: Repo = Depends(get_repo)):
-    """Run the code analysis and the vision reading again (e.g. after adding an LLM key)."""
+    """Run the code analysis, the trained model and the vision reading again (e.g. after adding an LLM key or
+    fixing the model environment). Before Nov 2026 the trained model was skipped here, so a failed reading stuck."""
     from ..integrations import d1_wound
     o = repo.get(m.Observation, observation_id)
     data = d1_wound.photo_bytes(o.value.get("url")) if o and o.patient_id == patient_id else None
     if data is None:
         raise HTTPException(404, "unknown wound photo")
     d1_wound.analyze(repo, o, data)
+    d1_wound.model_reading(repo, o, data)
     d1_wound.vision_review(repo, o, data)
     d1_wound.decide(repo, o)
     return wounds.public(repo.get(m.Observation, observation_id))

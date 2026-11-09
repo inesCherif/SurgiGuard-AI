@@ -109,4 +109,25 @@ These are the problems found by reading and testing v1 line by line. They define
 - **Fix:** listed the models Groq serves (`GET /openai/v1/models`) and tested which ones accept an image. `qwen/qwen3.8-27b` does, and gives an accurate description of `day1.jpg` (staples, purple marker, yellowish skin). It is now the default in `VISION_MODELS` (`backend/app/integrations/d1_wound.py`). Mistral Pixtral stays as the alternative (`LLM_ROUTE_WOUND_VISION=mistral:pixtral-12b-latest`).
 - **Lesson:** pin model names in one place, check provider availability at startup, and always keep a non-LLM fallback.
 
+### V2. The trained model failed with `AttributeError`
+- **Problem:** the clinic page showed "Model reading unavailable: model error (AttributeError)".
+- **Why:** `d1/models/wound_heads.joblib` holds scikit-learn objects (`StandardScaler`, `LogisticRegression`) **pickled with scikit-learn 1.9.1**. This PC had 1.6.1. A pickle stores the internal attributes of the class; another version expects different attributes. scikit-learn even warns `InconsistentVersionWarning`.
+- **Fix:** scikit-learn 1.9.1 in the venv, pinned in `backend/requirements.txt` (`>=1.9.1`).
+- **Check:** `day3.jpg` → erythema yes (p 0.46 / thr 0.32), edema yes, exudate no, not_healed and needs_review **uncertain** (inside the ±0.05 band), photo familiar (OOD gate passed).
+- **Lesson / v2 idea:** a pickle is not a portable model format. Save the version with the model and check it at load time, or export the heads as plain arrays (weights, bias, scaler mean/std) in JSON or ONNX.
+
+### V3. "Re-run review" never re-ran the model
+- **Problem:** after fixing V2, `POST /patients/{id}/wound-photos/{obs}/review` still returned the old error.
+- **Why:** the endpoint re-ran the OpenCV analysis, the vision LLM and the rule, but **not** `model_reading()`. A failed model reading stayed stuck forever.
+- **Fix:** `backend/app/routers/wounds.py` now calls `d1_wound.model_reading()` too.
+
+### V4. Free-tier rate limits stopped the agents
+- **Problem:** document analysis never finished; the log showed `HTTP 429 Rate limit reached for model openai/gpt-oss-120b`.
+- **Why:** every agent (investigation, digest, check-in, chat, protocol) used the same Groq model, and each model has its own tokens-per-minute quota on the free tier.
+- **Fix:** spread agents over models with `LLM_ROUTE_<AGENT>` in `backend/.env`: investigation → gpt-oss-120b; check-in, digest and D2 → gpt-oss-20b; chat and wound vision → Qwen 3.8; plan drafting → Mistral (a separate free quota). Everything stays free.
+
+### V5. Not enough memory on a 15 GB laptop
+- **Problem:** native crashes (`OpenBLAS: memory allocation failed`, PowerShell `0xe0434352`, `can't start new thread`) while the Docker build, the backend (CLIP loaded) and a test process with a second CLIP copy all ran at once.
+- **Fix:** run heavy jobs one at a time, test the model **inside** the running backend (one CLIP copy), and limit Docker's WSL VM if needed (`%UserProfile%\.wslconfig`: `[wsl2] memory=4GB`).
+
 *(more entries are added here as the work progresses)*
