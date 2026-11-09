@@ -119,7 +119,7 @@ observation → alert → acknowledged → clinical decision → instructions de
 | Account/device API | ASP.NET Core 8, MongoDB.Driver, MQTTnet, JWT, Swagger | team skill; Mongo stores time-series readings easily |
 | AI backend | Python 3.11, FastAPI, SQLModel (SQLite), APScheduler | fast to build; Python owns the AI ecosystem |
 | Agents | LangGraph, LangChain, Pydantic | explicit state machines that can pause for a human and resume |
-| LLMs | Groq (gpt-oss-20b/120b, Llama-4-Scout vision), Mistral (Medium/Small, Pixtral, embeddings), OpenRouter; offline **stub** mode | free tiers; one wrapper (`llm.py`) so any agent can switch provider |
+| LLMs | Groq (gpt-oss-20b/120b, Qwen 3.8 27B vision), Mistral (Medium/Small, Pixtral, embeddings), OpenRouter; offline **stub** mode | free tiers; one wrapper (`llm.py`) so any agent can switch provider |
 | RAG | FAISS + Mistral embeddings (fake embeddings offline) | answer only from the patient's own plan |
 | Computer vision | OpenCV, PyTorch, Hugging Face Transformers (CLIP), scikit-learn | classical CV + transfer learning on a small dataset |
 | Pose | MediaPipe (on the phone/browser) | landmarks computed on the device; no video leaves the phone |
@@ -148,7 +148,7 @@ observation → alert → acknowledged → clinical decision → instructions de
 | D1 movement tests | 6 camera tests (arm drift, face symmetry, finger tapping, eye movement…) comparing left and right | geometry/statistics | engineering cut-offs, not clinically validated |
 | D1 wound A | OpenCV: Laplacian sharpness, YCrCb skin mask, CIELAB local contrast, top-hat staple detection, ORB + RANSAC registration | classical CV | see `wound/HOW_V1_WORKS.md` |
 | D1 wound B | **CLIP ViT-B/16 (frozen)** + 6 logistic-regression heads trained on **SurgWound** (686 photos) | transfer learning | test AUROC 0.76–0.84; out-of-distribution gate; occlusion map |
-| D1 wound C | Vision LLM: Groq Llama-4-Scout-17B / Mistral Pixtral / Gemma-3 | VLM | describes, never diagnoses; JSON output; guarded |
+| D1 wound C | Vision LLM: Groq Qwen 3.8 27B (was Llama-4-Scout) / Mistral Pixtral / Gemma-3 | VLM | describes, never diagnoses; JSON output; guarded |
 
 ---
 

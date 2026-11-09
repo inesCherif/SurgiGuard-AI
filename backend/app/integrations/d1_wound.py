@@ -33,7 +33,8 @@ log = logging.getLogger("surgiguard.d1.wound")
 ACTOR = "d1:wound"
 AGENT = "wound_vision"
 # Multimodal model per provider (the default text models such as gpt-oss cannot see images).
-VISION_MODELS = {"groq": "meta-llama/llama-4-scout-17b-16e-instruct", "mistral": "pixtral-12b-latest",
+# Groq retired Llama-4-Scout (404 in Nov 2026); Qwen 3.8 27B is the vision-capable model it serves now.
+VISION_MODELS = {"groq": "qwen/qwen3.8-27b", "mistral": "pixtral-12b-latest",
                  "openrouter": "google/gemma-3-27b-it:free"}
 os.environ.setdefault(f"LLM_ROUTE_{AGENT.upper()}",
                       f"{settings.llm_provider}:{os.getenv('WOUND_VISION_MODEL') or VISION_MODELS.get(settings.llm_provider, '')}")

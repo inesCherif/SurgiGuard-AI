@@ -44,7 +44,7 @@ If a care team saw a photo at every dressing change, they could catch these earl
    CLIP ViT-B/16 (frozen) → 6 logistic-regression heads             │                                              │
    + unfamiliar-photo gate + abstention band (+ optional heat map)  │                                              │
  STAGE C  d1_wound.py  vision_review()                              │                                              │
-   vision LLM (Groq Llama-4-Scout / Mistral Pixtral) describes      │                                              │
+   vision LLM (Groq Qwen 3.8 / Mistral Pixtral) describes      │                                              │
    what is visible, JSON, diagnosis words filtered                  │                                              │
  STAGE D  d1_wound.py  decide()                                     │                                              │
    code rule → "attention" alert for the clinician, or nothing      │                                              │
@@ -173,7 +173,7 @@ The key baseline: **the OpenCV redness measure from Stage A scores AUROC 0.503 o
 
 ## 6. Stage C: vision-LLM description (`backend/app/integrations/d1_wound.py`)
 - `vision_review()` line 194 sends the photo (base64) plus a text summary of Stage A and Stage B (`_cv_brief`) to a vision LLM:
-  - Groq `meta-llama/llama-4-scout-17b-16e-instruct`;
+  - Groq `qwen/qwen3.8-27b` (Llama-4-Scout at the hackathon, since retired by Groq);
   - or Mistral `pixtral-12b-latest`;
   - or OpenRouter Gemma 3.
 - The `SYSTEM` prompt (line 153) says: describe only what is **visible**, never use disease words, say "appears", give a confidence, and answer in **JSON**.

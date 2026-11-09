@@ -103,4 +103,10 @@ These are the problems found by reading and testing v1 line by line. They define
 
 ## Part 3: v2 log
 
-*(entries are added here as the work progresses)*
+### V1. The vision model disappeared (Nov 2026)
+- **Problem:** the wound vision reading silently fell back to "unavailable". Groq had **retired** `meta-llama/llama-4-scout-17b-16e-instruct` (HTTP 404).
+- **Why it matters:** a hosted model is an external dependency that can vanish at any time. The design already handled it safely: the code measurements and the rule still ran, and the LLM is never the only gate.
+- **Fix:** listed the models Groq serves (`GET /openai/v1/models`) and tested which ones accept an image. `qwen/qwen3.8-27b` does, and gives an accurate description of `day1.jpg` (staples, purple marker, yellowish skin). It is now the default in `VISION_MODELS` (`backend/app/integrations/d1_wound.py`). Mistral Pixtral stays as the alternative (`LLM_ROUTE_WOUND_VISION=mistral:pixtral-12b-latest`).
+- **Lesson:** pin model names in one place, check provider availability at startup, and always keep a non-LLM fallback.
+
+*(more entries are added here as the work progresses)*
