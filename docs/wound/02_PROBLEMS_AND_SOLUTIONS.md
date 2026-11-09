@@ -246,6 +246,18 @@ Method and results: [04_CALIBRATION.md](04_CALIBRATION.md).
 - **Why it is not the whole story:** FUSeg is foot ulcers. The classical method was designed for incisions, so 0.17 partly measures a domain mismatch, and the learned model has never seen an incision.
 - **Decision:** the classical segmenter stays the **default**; `LearnedSegmenter` is opt-in by injection. Next: outline 160 SurgWound incisions (tool ready), fine-tune, score both on the 40 test outlines, then choose.
 
+### V21. Training finished, then the export crashed ten times in a row
+- **Problem:** the fine-tuning ran all 30 epochs, then `torch.onnx.export` failed ("Could not allocate bytes object"); every automatic resume crashed again immediately with "RNG state must be a torch.ByteTensor".
+- **Why:** two separate bugs. (1) The export ran in the training process, which still held all training photos in RAM, at the Windows memory limit (V17). (2) My resume code loaded the checkpoint with `map_location="cuda"`, which also moved the saved random-number state to the GPU; `torch.set_rng_state` only accepts a CPU tensor. The resume path had never been exercised end to end.
+- **Fix:** `.cpu()` on the restored RNG state, and a separate `--export-only` mode that exports the best weights in a fresh process without loading any photo.
+- **Check:** export succeeded; the training-venv tests pass. **Lesson:** a recovery path that has never run is not a recovery path; test it deliberately.
+
+### V22. Outlines drawn by reading a grid are only precise to a few percent
+- **Problem:** the 160 incision outlines were drafted by an AI assistant (Claude) from coordinate-grid contact sheets. Drawing the masks back on the photos showed thin cuts outlined **2–5 % of the photo** off the visible line, which is the whole width of an incision.
+- **Why:** coordinates read by eye off a 10 × 10 grid on a 420 px thumbnail cannot be more precise than that.
+- **Fix:** `annotation.snap_stroke`: each stroke point may move sideways (≤ 3 % of the long side) to the strongest local "darker and redder than the surroundings" ridge, with neighbour smoothing. The annotator decides where the cut is; snapping fixes the precision. Polygons are unchanged; 2 strokes were re-placed by hand after the visual check. Every photo carries a confidence flag, and results are reported separately on the high-confidence ones.
+- **Check:** unit test (a stroke placed 11 px too high lands within 2 px of the cut; nothing within reach means it stays within the radius); visual check of the masks. **Honesty:** labels are AI-drafted, not clinician-verified, and the same annotator drew train and test; this is why the classical segmenter stays the default (see [05_SEGMENTATION.md](05_SEGMENTATION.md), part 4).
+
 ### Note: memory and test isolation
 - Two backend tests failed once, only in the full suite, right after the backend was force-stopped while memory was nearly exhausted. Two clean full runs then gave 194/194.
 - Separately, a test that loads CLIP crashed with an access violation while the running backend held another CLIP copy (see V5).
