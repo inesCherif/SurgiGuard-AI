@@ -28,7 +28,12 @@ await build({
   mainFields: ['browser', 'module', 'main'],
   conditions: ['browser', 'default'],
   loader: { '.png': 'dataurl', '.jpg': 'dataurl', '.jpeg': 'dataurl', '.webp': 'dataurl' },
-  define: { 'process.env.NODE_ENV': '"development"', __DEV__: 'true' },
+  // SG_ACCOUNT_URL: address of the SurgiGuard .NET API for the local preview (default http://localhost:8080)
+  define: {
+    'process.env.NODE_ENV': '"development"',
+    __DEV__: 'true',
+    'process.env.SG_ACCOUNT_URL': JSON.stringify(process.env.SG_ACCOUNT_URL || 'http://localhost:8080'),
+  },
   alias: {
     'react-native': 'react-native-web',
     'react-native-reanimated': shim('reanimated.tsx'),

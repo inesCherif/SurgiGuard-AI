@@ -15,7 +15,9 @@ export const DEFAULT_API_URL = Platform.OS === 'web' && webOrigin ? webOrigin
 /** SurgiGuard API (.NET + MongoDB: accounts, ESP32 telemetry, device alerts) through a public ngrok tunnel.
  * Free tunnels change URL on restart: edit it in Settings or on the sign-in screen. */
 const localPreview = Platform.OS === 'web' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(webOrigin ?? '');
-export const DEFAULT_ACCOUNT_URL = localPreview ? 'http://localhost:8080' : 'https://03f9-196-176-231-29.ngrok-free.app';
+// The web build can point the local preview at another port (SG_ACCOUNT_URL, see scripts/build-web.mjs)
+const LOCAL_ACCOUNT_URL = (Platform.OS === 'web' && process.env.SG_ACCOUNT_URL) || 'http://localhost:8080';
+export const DEFAULT_ACCOUNT_URL = localPreview ? LOCAL_ACCOUNT_URL : 'https://03f9-196-176-231-29.ngrok-free.app';
 
 type Persisted = {
   role: Role | null; onboardedRoles: Role[]; apiUrl: string; accountUrl: string; session: Session | null;
@@ -57,7 +59,7 @@ const Ctx = createContext<AppStateValue | null>(null);
 function restore(raw: string): Persisted {
   const saved: Persisted = { ...initial, ...JSON.parse(raw) };
   if (Platform.OS === 'web') saved.apiUrl = DEFAULT_API_URL; // the page's own server
-  if (localPreview && saved.accountUrl === 'https://03f9-196-176-231-29.ngrok-free.app') saved.accountUrl = DEFAULT_ACCOUNT_URL;
+  if (localPreview && /ngrok-free\.app|^http:\/\/localhost:\d+$/.test(saved.accountUrl)) saved.accountUrl = DEFAULT_ACCOUNT_URL;
   if (saved.session && Date.parse(saved.session.expiresAt) <= Date.now()) saved.session = null;
   return saved;
 }

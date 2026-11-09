@@ -1,4 +1,4 @@
-# --- core API + D3 agents
+﻿# --- core API + D3 agents
 fastapi>=0.115
 uvicorn[standard]>=0.30
 mistralai>=2.0
@@ -22,7 +22,7 @@ langchain-core>=0.3
 langchain-community>=0.3
 langchain-mistralai>=0.2
 langchain-groq>=1.1
-faiss-cpu>=1.8
+faiss-cpu>=1.9  # 1.9+ is built for numpy 2
 pymupdf>=1.24
 bleach>=6.0
 scikit-learn>=1.4  # d1 physiology / patient twin
@@ -31,3 +31,4 @@ opencv-python-headless>=4.9  # d1 wound-photo analysis (D1-F)
 # trained wound-attribute model (d1/models/wound_heads.joblib); CPU wheels: pip install torch --index-url https://download.pytorch.org/whl/cpu
 torch>=2.3
 transformers>=4.45
+paho-mqtt>=2.0  # scripts/simulate_device_mqtt.py (virtual ESP32)
