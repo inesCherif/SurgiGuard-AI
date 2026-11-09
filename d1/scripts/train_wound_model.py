@@ -4,14 +4,16 @@
     python scripts/train_wound_model.py <prep>                  # ~10 min on a laptop CPU
 
 Protocol (no test-set peeking):
-1. Frozen DINOv2-small features for every image (cached in <prep>/features.npz).
+1. Frozen encoder features for every image (cached in <prep>/features*.npz). The encoder (CLIP ViT-B/16 vs
+   DINOv2-small) is chosen by cross-validation on train+val only; CLIP won (0.817 vs 0.75).
 2. Per attribute, on the official train+val split only: 5-fold stratified cross-validation picks the
    regularisation C (by AUROC), then out-of-fold probabilities pick the operating threshold for a target
    sensitivity of 0.85 and an "uncertain" band.
 3. The final head is fitted on train+val and evaluated ONCE on the official test split: AUROC with a
    bootstrap 95% CI, sensitivity, specificity, balanced accuracy, abstention rate, and baselines
    (majority class; for erythema also the OpenCV redness measure used before this model).
-Writes models/wound_heads.joblib, models/wound_model_metrics.json.
+Writes models/wound_heads.json + .npz (portable bundle, numpy-only inference), models/wound_heads.joblib (legacy)
+and models/wound_model_metrics.json.
 """
 
 import csv
@@ -187,7 +189,9 @@ def main(prep: Path) -> None:
     public = {k: v for k, v in bundle.items() if k not in ("heads", "ood")} | {"ood": {k: v for k, v in ood.items() if k != "reference"}}
     (out / "wound_model_metrics.json").write_text(json.dumps(public | {"heads": metrics},
                                                              indent=1), encoding="utf-8")
-    print("saved", out / "wound_heads.joblib")
+    from surgiguard_d1.wound.model_bundle import ModelBundle  # portable copy: inference never depends on the pickle
+    manifest = ModelBundle.from_sklearn_dict(bundle).save(out / "wound_heads.json")
+    print("saved", out / "wound_heads.joblib", "and", manifest)
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ rule-based urgent lane, which never waits for this model.
 2. One class-balanced, L2-regularised logistic regression per attribute (regularisation chosen by 5-fold CV AUROC).
 3. Operating threshold chosen on out-of-fold predictions for **sensitivity ≥ 0.85** (missing a sign is worse than a
    false alarm), and an **uncertain band** (±0.05 around the threshold) where the model abstains.
-4. Explanation: **occlusion sensitivity** — each cell of a 7×7 grid is greyed out and the drop in the redness score is
+4. Explanation: **occlusion sensitivity** — each cell of a 5×5 grid is greyed out and the drop in the redness score is
    measured; the heat map shows which regions the decision depended on. (Raw CLIP patch-token attributions were tried
    first and rejected: they highlighted the background, a known artefact.)
 
@@ -58,4 +58,8 @@ and stays explainable.
 - The attributes are what *surgeons labelled from a photo*; warmth, pain, smell and depth cannot be seen.
 
 Reproduce: `python scripts/prepare_surgwound.py <hf json files> <prep>` then `python scripts/train_wound_model.py <prep>`
-(metrics in `models/wound_model_metrics.json`, heads in `models/wound_heads.joblib`, ~100 KB).
+(metrics in `models/wound_model_metrics.json`).
+
+## Files and inference (v2, Nov 2026)
+- `models/wound_heads.json` + `models/wound_heads.npz` (~1.7 MB): **portable bundle** read by `model_bundle.py`. Plain arrays (scaler mean/std, logistic weights and bias, thresholds, OOD reference) + a versioned JSON manifest; inference is numpy only, no scikit-learn, no pickle.
+- `models/wound_heads.joblib` (~1.8 MB): the original scikit-learn 1.9.1 pickle, kept for provenance. `scripts/export_wound_heads.py` converts it and refuses to write if any probability differs by more than 1e-9 (measured: 1.1e-16 over 549 photos x 6 heads).

@@ -40,8 +40,7 @@ async def lifespan(_: FastAPI):
                 d1_wound._d1()
                 from surgiguard_d1.wound import model as wm
                 if wm.available()[0]:
-                    wm.load_heads()
-                    wm._encoder(wm.load_heads().get("encoder"))
+                    wm.warm_up()
             except Exception:
                 logging.getLogger("surgiguard").exception("wound model warm-up failed")
         threading.Thread(target=_warm, daemon=True).start()

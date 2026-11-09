@@ -85,7 +85,7 @@ def analyze(repo: Repo, obs: m.Observation, data: bytes) -> dict:
     return out
 
 
-# ------------------------------------------------------------------ 1b. learned model (SurgWound, DINOv2 + linear heads)
+# ------------------------------------------------------------------ 1b. learned model (SurgWound, CLIP ViT-B/16 + linear heads)
 
 # Heads whose "yes" is a reason for the clinician to look (the model can only ADD a reason, never remove one).
 MODEL_REVIEW_HEADS = ("exudate", "elevated_risk", "needs_review")
