@@ -1,66 +1,146 @@
 # 05. Wound v2 step 3: learned segmentation
 
-> Status: **part 1 of 3 done** (the yardstick). Part 2 (data + annotation tool) and part 3 (the learned
-> `Segmenter`) are next. Previous: [04_CALIBRATION.md](04_CALIBRATION.md). Journal: [02_PROBLEMS_AND_SOLUTIONS.md](02_PROBLEMS_AND_SOLUTIONS.md) (V15).
+> Status: **parts 1–3 done on public data** (yardstick, tooling, trained model). Remaining: outline ~160
+> SurgWound incisions, fine-tune on them, then decide whether the learned model becomes the default.
+> Previous: [04_CALIBRATION.md](04_CALIBRATION.md). Journal: [02_PROBLEMS_AND_SOLUTIONS.md](02_PROBLEMS_AND_SOLUTIONS.md) (V15–V20).
 
-## Why this step
+## Result in one table
 
-Calibration (step 2) made the segmentation error measurable in millimetres, and it showed the real weakness
-(journal V14): the classical segmenter grows its mask by ~1.4 mm on each side, so a 3 mm incision is reported
-about 6 mm wide. A learned segmenter can draw a tight outline, but "the model is better" is only a claim until
-both are scored by the **same code on the same images**. So the first deliverable is the yardstick, not the model.
+200 FUSeg photos never seen during training, scored by the same `SegmenterBenchmark` code for both segmenters:
+
+| Segmenter | Dice mean | Dice median | IoU | Precision | Recall | Width ratio | Nothing found | CPU time / photo |
+|---|---|---|---|---|---|---|---|---|
+| classical-local-contrast | 0.17 | 0.01 | 0.11 | 0.15 | 0.31 | 1.11 | 0 / 200 | 0.12 s |
+| **learned-unet:fuseg-v1** | **0.82** | **0.91** | **0.74** | **0.82** | **0.86** | **1.02** | 2 / 200 | 0.18 s |
+
+Read it honestly:
+- These are **foot ulcers** (FUSeg), not surgical incisions. The classical segmenter was designed for incisions
+  on skin, so 0.17 is partly an unfair test; the learned model has not yet been tested on incisions at all (V20).
+  This is why the classical segmenter stays the **default** until part 4.
+- The size floor of the learned segmenter was corrected after looking at test failures (V19). Before the fix the
+  same model scored Dice 0.74 mean with 26 misses; the raw network (no post-processing) scores 0.82. Both numbers
+  are kept in `C:\Users\juba839\surgiguard_data\unet_benchmark_before_V19.json` and in this doc.
+- Width ratio 1.02: on these photos the learned outline has the right width, which is exactly the classical
+  weakness found in V14 (×1.65 on incisions). It must be confirmed on incisions.
 
 ## Plan
 
 | Part | What | Status |
 |---|---|---|
-| 1 | `wound/seg_eval.py`: Dice, IoU, precision, recall, **width ratio**; `SegmenterBenchmark` for any `Segmenter` | ✅ done |
-| 2 | Data: public wound-segmentation masks + ~100–150 incision outlines drawn with a click-to-outline tool (SurgWound has no masks) | ⏭ next |
-| 3 | `LearnedSegmenter` (small U-Net, GPU torch), injected into `WoundAnalyzer`; benchmark vs `ClassicalSegmenter` | later |
+| 1 | `seg_eval.py`: Dice, IoU, precision, recall, width ratio; `SegmenterBenchmark` for any `Segmenter` | ✅ |
+| 2 | Data layer (`seg_data.py`), click-to-outline tool, outline set of 160 SurgWound photos | ✅ tool + set; outlining to do |
+| 3 | `LearnedSegmenter` (ONNX), training code, model trained on FUSeg, benchmark | ✅ |
+| 4 | Fine-tune on the incision outlines, benchmark on the 40 SurgWound test outlines, choose the default | ⏭ next |
 
-## Part 1: the evaluation module
+## Part 1: the yardstick
 
 `d1/src/surgiguard_d1/wound/seg_eval.py`
 
-- **`score_masks(pred, truth) -> MaskScores`**: Dice `2|P∩T| / (|P|+|T|)`, IoU `|P∩T| / |P∪T|`, precision, recall.
-  Conventions used in medical segmentation: empty prediction on empty truth = 1 (correctly found nothing);
-  nothing found on a real wound = 0. Masks of different shapes raise an error instead of returning a silent score.
-- **`width_ratio`**: predicted mean width / true mean width, with mean width = area / length of the
-  minimum-area rotated rectangle. Why a separate metric: for a long thin incision drawn twice too wide,
-  recall is 1, precision is 0.5 and **Dice is still 0.67**, which looks acceptable. The width ratio says
-  **2.0** directly, which is the clinically relevant error (V14).
-- **`SegmenterBenchmark`** takes a list of `LabelledImage` (photo, true mask, optional scale and ignore mask),
-  runs any segmenter and returns a `BenchmarkReport` (per-image scores, misses, `summary()`); `compare(a, b, ...)`
-  gives side-by-side summaries.
+- **`score_masks(pred, truth)`**: Dice `2|P∩T| / (|P|+|T|)`, IoU `|P∩T| / |P∪T|`, precision, recall. Empty on empty = 1,
+  nothing found on a real wound = 0, masks of different shapes raise an error.
+- **`width_ratio`**: predicted / true mean width (area / long side of the rotated bounding rectangle). For a long incision
+  drawn twice too wide, Dice is still 0.67 but the width ratio says 2.0, the clinically relevant error (V15).
+- **`SegmenterBenchmark`** runs any segmenter over `LabelledImage`s, returns per-image scores, misses and a summary.
 
-### Design
+Design: depends only on the `Segmenter` protocol (**Dependency Inversion / Strategy**), fixed loop with a pluggable step
+(**Template Method** in spirit), frozen value objects.
 
-- **Dependency Inversion / Strategy**: the benchmark depends only on the `Segmenter` protocol from
-  `segmentation.py`. Classical, learned or a test fake all go through the same loop, so a comparison can never
-  be biased by different evaluation code.
-- **Template Method** (in spirit): the loop "segment → score → collect misses" is fixed; the segmenter is the
-  pluggable step.
-- **Value objects**: `MaskScores`, `LabelledImage` and `BenchmarkReport` are frozen dataclasses.
-- **Single Responsibility**: metrics know nothing about segmenters; the benchmark knows nothing about how a
-  segmenter works.
+## Part 2: data and the outline tool
 
-### First baseline (synthetic incision, 300 × 15 px, scale 5 px/mm)
+**Data**, stored outside OneDrive in `C:\Users\juba839\surgiguard_data` (V16):
 
-| Segmenter | Dice | IoU | Precision | Recall | Width ratio |
-|---|---|---|---|---|---|
-| classical-local-contrast | 0.74 | 0.59 | 0.59 | 1.00 | **1.65** |
+| Set | Content | Masks | Use |
+|---|---|---|---|
+| FUSeg 2021 (MICCAI challenge, UW-Milwaukee) | 1 010 foot-ulcer photos, 512 × 512, de-identified | yes | train (810, split 729 / 81) + test (official validation, 200) |
+| SurgWound (Hugging Face `Sonulee/SurgWound`, CC BY-SA 4.0) | 686 surgical-wound photos with surgeon labels | **no** | 160 photos to outline (`outline/train` 120, `outline/test` 40) |
 
-Recall 1.0 with precision 0.59 is exactly the V14 behaviour (never misses the edge, but over-draws the margin).
-This is the number part 3 has to beat; real photos will be scored the same way once part 2 provides outlines.
+FUSeg citation: C. Wang et al., "Fully Automatic Wound Segmentation with Deep Convolutional Neural Networks",
+Scientific Reports 10:21897, 2020.
+
+**`seg_data.MaskFolder`** is the only code that knows the layout `<root>/images/*` + `<root>/labels/*.png` (the FUSeg
+layout, so no conversion). The benchmark and training read it, the outline tool writes it (**DRY**). It refuses a mask
+whose size differs from its photo instead of resizing silently.
+
+**`annotation.py` + `scripts/outline_wounds.py`**: two **Strategy** shapes, `Polygon` (click around an open wound) and
+`Stroke` (click *along* an incision + set its width: a 3 mm cut is 10–20 px wide, tracing both borders is slow and
+noisy). The mask is the union of shapes (**Composite**), every edit undoable. All logic is window-free and unit-tested;
+the script only maps mouse/keys to it (**Humble Object**).
+
+**`scripts/make_outline_set.py`**: draws photos round-robin over closure methods so rare types are included (all 14
+adhesive and all 7 staple photos in train), train only from SurgWound's train split, test only from its test split.
+
+How to outline (about 1 minute per photo, resumable):
+
+```powershell
+C:\Users\juba839\surgiguard_data\venv-train\Scripts\python d1\scripts\outline_wounds.py C:\Users\juba839\surgiguard_data\outline\train
+C:\Users\juba839\surgiguard_data\venv-train\Scripts\python d1\scripts\outline_wounds.py C:\Users\juba839\surgiguard_data\outline\test
+```
+`l` stroke / `p` polygon, left click = point, right click = undo, mouse wheel = width, Enter = finish shape,
+`s` = save + next, `e` = save "no wound visible", `n` skip, `b` back, `q` quit.
+
+## Part 3: the learned segmenter
+
+### Inference: `wound/learned.py`
+
+- **ONNX + onnxruntime**: training needs GPU PyTorch (~2.5 GB), inference must stay light and portable like the
+  numpy model bundle of step 1. onnxruntime is already in the backend, CPU-only, thread-safe; the model is one file
+  (`d1/models/wound_seg/unet.onnx`, 58 MB) plus its model card (`unet.json`: input size, threshold, data, scores,
+  training history).
+- **`LearnedSegmenter`** implements the `Segmenter` protocol, so
+  `WoundAnalyzer(segmenter=LearnedSegmenter("d1/models/wound_seg/unet.onnx"))` swaps it in without touching
+  quality, measurement, registration or the backend (**Open/Closed**). The onnxruntime session is created lazily
+  and can be injected (tests use a fake session).
+- **Letterbox, not resize**: the photo's long side is fitted to 320 px and the rest padded, so a thin incision is not
+  squeezed (a plain resize of a 4:3 photo to a square changes widths by 33 %). `letterbox`, `unletterbox` and
+  `normalise` are imported by the training code too: preprocessing **cannot** differ between training and inference.
+- **Shared finishing step**: the peri-wound skin reference and size checks moved from `ClassicalSegmenter._finish` to
+  `finish_segmentation()`, used by both segmenters, so measurement always receives the same fields computed the same
+  way. Proven safe: 80/80 FUSeg photos give a bit-identical classical mask and reference colour before/after.
+- **Per-segmenter limits** (V19): `LEARNED_LIMITS` lowers the minimum wound size from 0.2 % to 0.02 % of the frame;
+  isolated blobs below half of that are dropped as specks.
+
+### Training: `wound/training/` + `scripts/train_segmenter.py`
+
+| Choice | Why |
+|---|---|
+| U-Net, ResNet18 encoder pretrained on ImageNet (~14 M parameters) | skip connections bring back the fine detail thin wounds need; pretrained features matter with only ~800 photos; fits a 4 GB GPU |
+| Loss = BCE + soft Dice | a wound can be ~1 % of the pixels; Dice stops the model from predicting "all background" |
+| Augmentations: rotation ±25°, scale 0.75–1.3, shift, flips, brightness / contrast / saturation, hue ±4 only | home phone photos vary in framing and light; hue is kept almost fixed because colour is a clinical signal |
+| AdamW + OneCycle LR, mixed precision, batch 8 at 320 px | ~25 s per epoch on the RTX 2050, 1.7 GB of GPU memory |
+| Best epoch chosen on the internal validation split (81 photos), test set used once at the end | no test-set selection |
+| Full checkpoint every epoch + `--resume` | the PC ran out of memory mid-training (V17) |
+
+Training curve (validation Dice at network resolution): epoch 1: 0.39, 10: 0.72, 20: 0.81, best 0.86 at epoch 38 of 40.
+
+Re-train or re-score:
+```powershell
+$F = "C:\Users\juba839\surgiguard_data\raw\wound-segmentation\data\Foot Ulcer Segmentation Challenge"
+$env:OPENBLAS_NUM_THREADS = 1
+C:\Users\juba839\surgiguard_data\venv-train\Scripts\python d1\scripts\train_segmenter.py --train "$F\train" --test "$F\validation" --out d1\models\wound_seg\unet --version fuseg-v1 --resume
+# add --benchmark-only to re-score the existing model
+```
+
+The training environment (`C:\Users\juba839\surgiguard_data\venv-train`, Python 3.11) is separate from the backend
+venv: torch 2.5.1+cu121, torchvision 0.20.1, onnx, onnxruntime, opencv-python (with windows, for the outline tool),
+numpy, pillow, pydantic, scikit-learn, joblib, pytest. The backend needs nothing new.
 
 ### Tests
 
-`d1/tests/test_wound_seg_eval.py` (8 tests): exact Dice/IoU on hand-built masks (perfect, half overlap),
-the doubled-width case (Dice 0.67 but width ratio 2.0), empty-mask conventions, shape mismatch error, width of a
-rotated bar, benchmark with fake perfect/blind segmenters, and the classical segmenter end to end.
+| File | Tests | What they prove |
+|---|---|---|
+| `test_wound_seg_eval.py` | 8 | exact Dice / IoU on hand-built masks, doubled width exposed, empty conventions, benchmark loop |
+| `test_wound_annotation.py` | 8 | stroke width, polygon fill, union, undo, clamping, folder round trip, size mismatch refused |
+| `test_wound_learned.py` | 8 | letterbox round trip, normalisation layout, post-processing, model card, injection into `WoundAnalyzer`, small wound kept (V19), **a real ONNX file through onnxruntime gives the same mask as the reference** |
+| `test_wound_training.py` | 5 | U-Net output shape, loss sanity, augmentation keeps photo and mask aligned, deterministic split, one-image overfit |
+
+Backend venv: d1 228 passed, 3 skipped (the torch-training tests and the ONNX export, which need the training venv).
+Training venv: all 29 of these pass.
 
 ## Honest limits
 
-- The width estimate assumes an elongated, roughly straight wound; for curved or round wounds it is only a rough
-  indication (Dice/IoU remain valid).
-- The baseline above is one synthetic image. It proves the tool works; it is **not** a claim about real photos.
+- **No incision test yet.** FUSeg is foot ulcers; the model is not used by default until it is fine-tuned and scored
+  on SurgWound incision outlines (part 4).
+- The V19 size-floor correction was found by looking at test failures; reported with before/after numbers.
+- 2 / 200 ulcers are genuinely missed (truth ≤ 0.03 % of the frame).
+- The width ratio assumes an elongated, roughly straight wound; for round ulcers it is only indicative.
+- One training run, one seed: no confidence interval yet.

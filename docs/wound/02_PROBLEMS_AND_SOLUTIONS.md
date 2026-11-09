@@ -217,6 +217,35 @@ Method and results: [04_CALIBRATION.md](04_CALIBRATION.md).
 - **Fix:** `seg_eval.py` reports a **width ratio** (predicted / true mean width, area / rotated-rectangle length) next to Dice, IoU, precision and recall, and one `SegmenterBenchmark` scores every `Segmenter` with the same code.
 - **Check:** synthetic test (Dice 0.67, width ratio 2.0); classical baseline on a synthetic cut: recall 1.00, precision 0.59, width ratio 1.65, matching V14. See [05_SEGMENTATION.md](05_SEGMENTATION.md).
 
+### V16. 3 GB of downloads over a slow connection that kept dropping
+- **Problem:** at ~0.8 MB/s the GitHub zip of the FUSeg repository stopped at 215 MB ("File is not a zip file"), the SurgWound train file stopped at 47 of 283 MB, and closing a session killed the PyTorch download; leftover duplicates then competed for the same bandwidth.
+- **Why:** a single long HTTP download cannot be resumed when the server builds the zip on the fly (codeload), and nothing checked file integrity.
+- **Fix:** a **sparse, blob-less git clone** of just the challenge folder (only the needed files); `curl -C -` with retries for the Hugging Face files; `pip --resume-retries`; duplicate processes found by start time and stopped. Data lives outside OneDrive (`C:\Users\juba839\surgiguard_data`) so 1 GB of photos is not synced.
+- **Check:** zip test, exact byte sizes against the Hugging Face API, file counts (810 + 200 images with 810 + 200 masks).
+
+### V17. "The paging file is too small": out of memory in the middle of training
+- **Problem:** importing GPU PyTorch failed (`WinError 1455`), then training crashed at epoch 3, unable to allocate 1 MB.
+- **Why:** Windows' commit limit (RAM + page file) was full: 23.2 of 23.4 GB. The CUDA libraries need ~3–4 GB of commit; the Docker VM held ~3 GB and VS Code's Java extension ran **8 language servers** (~4 GB) that restart by themselves.
+- **Fix:** separate training venv (the backend stays untouched); Docker containers and the Java servers stopped, WSL shut down; `OPENBLAS_NUM_THREADS=1`; and, the real engineering fix, **a full checkpoint after every epoch** (weights, optimiser moments, LR-schedule position, AMP scale, RNG states) with `--resume`, run inside an auto-restart loop. A crash now costs one epoch, not the run.
+- **Check:** the restarted run completed all 40 epochs.
+
+### V18. `cv2.resize` silently drops the channel axis of a one-channel image
+- **Problem:** letterboxing a mask shaped (H, W, 1) crashed: "could not broadcast (240, 320) into (240, 320, 1)".
+- **Why:** OpenCV returns (H, W) for one-channel input, whatever the input shape.
+- **Fix:** reshape the resized image back to the input's channel layout. The same `letterbox` is shared by training and inference, so photo and mask always go through identical geometry.
+- **Check:** letterbox → unletterbox round trip of a mask gives Dice > 0.95 (test).
+
+### V19. A shared safety rule threw away 24 wounds the model had found
+- **Problem:** first test score Dice 0.74 mean, with 26 of 200 photos "nothing found".
+- **Why:** looking at those 26: the network had found 24 of them (raw Dice up to 0.95), then `finish_segmentation` rejected every wound under 0.2 % of the frame. That floor was set for the classical segmenter, whose tiny detections are mostly noise; 17 % of FUSeg test ulcers are smaller than it.
+- **Fix:** limits per segmenter: `LEARNED_LIMITS` uses 0.02 % (~50 px on a 512 px photo); specks under half of that are dropped.
+- **Check:** Dice 0.82 mean, 2 misses (truth ≤ 0.03 % of the frame); regression test with a 0.05 % wound. **Honesty note:** this was found by looking at test failures, so both numbers are published ([05_SEGMENTATION.md](05_SEGMENTATION.md)).
+
+### V20. Which data proves what (domain gap)
+- **Observation:** the classical segmenter scores Dice 0.17 on FUSeg; the learned one 0.82.
+- **Why it is not the whole story:** FUSeg is foot ulcers. The classical method was designed for incisions, so 0.17 partly measures a domain mismatch, and the learned model has never seen an incision.
+- **Decision:** the classical segmenter stays the **default**; `LearnedSegmenter` is opt-in by injection. Next: outline 160 SurgWound incisions (tool ready), fine-tune, score both on the 40 test outlines, then choose.
+
 ### Note: memory and test isolation
 - Two backend tests failed once, only in the full suite, right after the backend was force-stopped while memory was nearly exhausted. Two clean full runs then gave 194/194.
 - Separately, a test that loads CLIP crashed with an access violation while the running backend held another CLIP copy (see V5).
