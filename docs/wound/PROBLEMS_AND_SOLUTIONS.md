@@ -89,14 +89,14 @@ These are the problems found by reading and testing v1 line by line. They define
 
 | # | Problem | Evidence | Planned fix |
 |---|---|---|---|
-| A1 | The review rule still alerts on the chance-level redness score | `d1_wound.py` `decide()`: Δring ≥ 4, Δredness ≥ 6; model card: AUROC 0.503 | Rule based only on validated signals; redness trend kept as display-only information |
-| A2 | Two different analysers (patient vs clinician) | `backend/app/wound_image.py` (512 px, sharpness cut-off 12) vs `pipeline.py` (640 px, cut-off 25) | One analyser |
+| A1 ✅ V8 | The review rule still alerts on the chance-level redness score | `d1_wound.py` `decide()`: Δring ≥ 4, Δredness ≥ 6; model card: AUROC 0.503 | Rule based only on validated signals; redness trend kept as display-only information |
+| A2 ✅ V7 | Two different analysers (patient vs clinician) | `backend/app/wound_image.py` (512 px, sharpness cut-off 12) vs `pipeline.py` (640 px, cut-off 25) | One analyser |
 | A3 | The model looks at the whole photo, not the wound | `model.predict()` encodes the full image; the mask is unused | Learned wound segmentation, then classify the wound crop |
 | A4 | No real size, no colour calibration | Area is a % of the frame; no white reference | Printable calibration card (ArUco + colour patches + mm scale) |
 | A5 | Pixel-based kernels (25/51/121 px) do not scale with distance | `_finish()`, `measure()` | Express sizes in mm (with the card) or relative to the wound size |
 | A6 | Uncalibrated probabilities, fixed ±0.05 band | `model.py` | Temperature scaling and calibration plots |
-| A7 | Stale docs: DINOv2 / 7×7 / 100 KB | `model.py` docstring, model card | Fix |
-| A8 | Thread-unsafe global state | `_staple_chain.last_count` | Return the count |
+| A7 ✅ 1b | Stale docs: DINOv2 / 7×7 / 100 KB | `model.py` docstring, model card | Fix |
+| A8 ✅ V10 | Thread-unsafe global state | `_staple_chain.last_count` | Return the count |
 | A9 | Not evaluated per skin tone or on phone photos | Model card "known limits" | Subgroup report plus a small consented phone-photo test set |
 
 ---
@@ -129,5 +129,54 @@ These are the problems found by reading and testing v1 line by line. They define
 ### V5. Not enough memory on a 15 GB laptop
 - **Problem:** native crashes (`OpenBLAS: memory allocation failed`, PowerShell `0xe0434352`, `can't start new thread`) while the Docker build, the backend (CLIP loaded) and a test process with a second CLIP copy all ran at once.
 - **Fix:** run heavy jobs one at a time, test the model **inside** the running backend (one CLIP copy), and limit Docker's WSL VM if needed (`%UserProfile%\.wslconfig`: `[wsl2] memory=4GB`).
+
+## Step 1: architecture clean-up (Nov 2026)
+
+Design rationale: [V2_ARCHITECTURE.md](V2_ARCHITECTURE.md).
+
+### V6. A 430-line file did everything
+- **Problem:** `pipeline.py` mixed loading, colour conversion, quality, segmentation, measurement, registration and drawing. Thresholds and kernel sizes were literals spread through it. Swapping the segmenter (step 3) would have meant editing everything.
+- **Fix:**
+  - 8 modules, one responsibility each (SRP), with every number in `config.py`.
+  - A `Segmenter` interface (Strategy) with `ClassicalSegmenter` as today's implementation.
+  - `WoundAnalyzer` as a Facade that receives the segmenter by injection (DIP).
+  - The old `analyze()` function API is kept, so no caller changed.
+- **How we proved nothing broke:** the old file was loaded from git and run side by side with the new code on all 9 demo cases. The outputs were **identical**. All d1 tests passed, plus new architecture tests (fake segmenter injection, concurrent analyses).
+
+### V7. The patient and the clinician were told opposite things
+- **Problem:** the patient column of the demo said "Redness area 5.7% → 7.7% (+35%): more redness than the reference photo". The clinician panel said "Not compared: the two photos do not seem to show the same area (10 consistent points)".
+- **Why:**
+  - Two analysers existed. `backend/app/wound_image.py` (the older one, numpy only, 512 px, its own thresholds) fed the patient view and the investigation agent, and it **compared any two photos without checking they showed the same wound**.
+  - The demo photos day 1 and day 3 are of **two different patients** (`seed/photos/CREDITS.md`).
+  - So the "+35%" was a comparison between two people.
+- **Fix:**
+  - `wound_image.py` deleted. The photo is analysed **once** by the d1 pipeline.
+  - The patient view is produced by an **Adapter** (`integrations/wound_views.py`) that re-shapes that single result into the fields the app already reads, so the app code didn't change.
+  - The investigation tool and the demo seed now use the registered comparison (`d1_wound.compare_photos`).
+- **Tests:** two old tests asserted the bug (`trend == "up"` for two different patients). They now assert a **refusal**, and a new test checks that uploading the same site gives a real (stable) trend.
+- **Lesson:** duplicated logic drifts. One source of truth, with adapters for each consumer.
+
+### V8. An alert reason that was no better than a coin toss
+- **Problem:** the review rule raised a clinician alert when the redness (mean Δa\* ≥ 6) or the redness around the wound (≥ 4) increased.
+- **Why it is wrong:** against the surgeons' erythema labels (SurgWound test split), this OpenCV redness measure scores **AUROC 0.503**, which is chance level. Alerting on it adds random alarms and teaches clinicians to ignore alerts (alarm fatigue).
+- **Fix:**
+  - Rules are now Strategy objects (`integrations/wound_rules.py`): `ModelSignRule` (validated heads, AUROC 0.82–0.84), `AreaGrowthRule` (only for a registered, distance-corrected comparison), `LiveVisionRule` (live LLM, medium/high confidence).
+  - The redness trend is still measured and **shown**, but is no longer an alert reason.
+  - `decide()` just runs the rules (Open/Closed).
+- **Tests:** `test_wound_rules.py` includes "chance-level redness trend no longer raises an alert".
+
+### V9. Model file tied to one library version (follow-up of V2)
+- **Problem:** the heads were a scikit-learn pickle. A pickle stores the private attributes of the classes that wrote it, so another scikit-learn version breaks it. Loading a pickle can also execute arbitrary code.
+- **Fix:**
+  - A logistic-regression head is only `sigmoid(w·(x − mean)/scale + b)`, so `model_bundle.py` stores those arrays in `.npz` plus a versioned JSON manifest, and evaluates them with numpy.
+  - Files are loaded with `allow_pickle=False`.
+  - A Factory Method picks the reader; an Adapter converts the old pickle.
+  - The training script writes both formats.
+- **Proof:** max |numpy − scikit-learn| = **1.1 × 10⁻¹⁶** over 549 real feature vectors × 6 heads. The export refuses to write above 10⁻⁹. The day-3 prediction through CLIP is identical. A test loads the bundle with scikit-learn **blocked**.
+
+### V10. Shared mutable state in the staple detector
+- **Problem:** `_staple_chain.last_count` stored the staple count **on the function object**. With two photos analysed at the same time (the backend runs jobs in threads), one photo could get the other's count.
+- **Fix:** the count is returned inside the immutable `Segmentation` value object.
+- **Test:** concurrent analyses give the same results as sequential ones.
 
 *(more entries are added here as the work progresses)*

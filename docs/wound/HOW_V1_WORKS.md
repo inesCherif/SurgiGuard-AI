@@ -197,6 +197,8 @@ The patient only sees 4 sign attributes (`PATIENT_HEADS`, line 92), never "risk"
 - **No diagnosis words**, filtered by code (`backend/app/safety/output_guard.py`).
 
 ## 9. Known weaknesses (what v2 fixes)
+
+> **Status (v2 step 1, Nov 2026):** 1, 2, 7 and 8 are fixed. The architecture after the fix is described in [V2_ARCHITECTURE.md](V2_ARCHITECTURE.md). The file and line references in this document describe the **v1** code; in v2 the same logic lives in the split modules (`quality.py`, `segmentation.py`, `measurement.py`, `registration.py`, …).
 See [`PROBLEMS_AND_SOLUTIONS.md`](PROBLEMS_AND_SOLUTIONS.md). In short:
 1. The Stage A redness measure is at **chance level** (AUROC 0.503), yet Stage D still alerts on it.
 2. **Two analysers:** `backend/app/wound_image.py` (older, numpy-only) feeds the patient's trend chip, while `pipeline.py` feeds the clinician. The two can show different numbers.

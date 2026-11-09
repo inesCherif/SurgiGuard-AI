@@ -327,7 +327,7 @@ This followed the team's "Backend step 1…10" commits. Write it in this order:
 | 3 | `patient_twin/` | near-term forecast of the patient's own HR/SpO2 with an 80% band: persistence, then trend (Chronos optional). It **abstains** with too little data. `backtest.py` decides whether a more complex method is worth it. |
 | 4 | `rehab/` | `prescription.py` (exercises by surgery and post-op day, clinician limits); `angles.py` (joint angles from MediaPipe landmarks, smoothing); `exercises/` (knee flexion, leg raise, ankle pumps: rep counter, range of motion, hold time); `session.py`, `evaluator.py` |
 | 5 | `neuro/` | 6 guided movement tests from video landmarks, comparing left and right; "attention" only, never an emergency |
-| 6 | `wound/pipeline.py` → `wound/model.py` → `scripts/prepare_surgwound.py` → `scripts/train_wound_model.py` → `models/` | wound computer vision: see **[wound/HOW_V1_WORKS.md](wound/HOW_V1_WORKS.md)** |
+| 6 | `wound/config.py` → `colour.py` → `quality.py` → `segmentation.py` → `measurement.py` → `registration.py` → `render.py` → `pipeline.py` (Facade) → `model_bundle.py` → `model.py` → `scripts/prepare_surgwound.py` → `train_wound_model.py` → `export_wound_heads.py` → `models/` | wound computer vision: **[wound/V2_ARCHITECTURE.md](wound/V2_ARCHITECTURE.md)** (structure, patterns), **[wound/HOW_V1_WORKS.md](wound/HOW_V1_WORKS.md)** (algorithms) |
 
 **Check:** `cd d1; python -m pytest -q`.
 
@@ -343,7 +343,7 @@ This followed the team's "Backend step 1…10" commits. Write it in this order:
 | `integrations/d2_bridge.py` | D2 output → plan draft; the "D2 JSON" handed to D1; RAG indexing |
 | `integrations/d1_bridge.py` | expected recovery (cached in `backend/.cache/recovery`) and Patient Twin for the home screen |
 | `integrations/d1_motor.py`, `routers/motor.py` | rehab sessions (with ESP32 heart rate) and movement tests (consent is opt-in) |
-| `integrations/d1_wound.py`, `wounds.py`, `wound_photos.py`, `routers/wounds.py` | wound photos at dressing-change windows → OpenCV → model → vision LLM → review rule |
+| `integrations/d1_wound.py`, `wound_views.py` (adapter), `wound_rules.py` (rule strategies), `wounds.py`, `wound_photos.py`, `routers/wounds.py` | wound photos at dressing-change windows → ONE OpenCV analysis → model → vision LLM → review rules |
 | `.NET WoundsController`, `ChatController` | let the native Android app reach the AI backend through the .NET API |
 | `routers/hub.py`, `routers/integration.py`, `web/story.html` | one page showing the whole chain with status chips (API link, ESP32 online, LLM mode, alerts) |
 
