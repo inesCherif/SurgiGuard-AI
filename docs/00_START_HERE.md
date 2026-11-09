@@ -29,3 +29,16 @@ The files are numbered, so read them in that order. Each line says what you will
 - [`../CONTRIBUTIONS.md`](../CONTRIBUTIONS.md): who did what
 - [`../d1/models/WOUND_MODEL_CARD.md`](../d1/models/WOUND_MODEL_CARD.md): the trained model's data, method and test results
 - `../PROJECT.md`, `../INTEGRATION.md`: the team's hackathon brief and integration notes
+
+## Project status (last updated 9 November 2026)
+
+| Step | Status |
+|---|---|
+| Own repo, runs without hardware, full documentation | ✅ done |
+| Wound v2, step 1: architecture clean-up (modules, Strategy, Facade, portable model, one analyser, rule strategies) | ✅ done: [wound/03_V2_ARCHITECTURE.md](wound/03_V2_ARCHITECTURE.md) |
+| Wound v2, step 2: calibration card (real mm / cm², colour correction) | ✅ done: [wound/04_CALIBRATION.md](wound/04_CALIBRATION.md) |
+| Wound v2, step 3: learned wound segmentation (new `Segmenter`, Dice / IoU vs classical) | ⏭ **next**. Needs: GPU torch (~2.5 GB), public wound-segmentation data, about 100–150 incision outlines (click-to-outline tool) |
+| Wound v2, step 4: classifier on the wound crop, calibrated probabilities, honest benchmark | planned |
+
+**To resume:** `.\scripts\demo.ps1` starts everything (Docker must be running). Run tests with the backend stopped:
+`$env:HF_HUB_OFFLINE="1"; $env:LLM_MODE="stub"`, then `pytest` in `d1/` and `backend/`.
