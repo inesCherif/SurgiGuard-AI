@@ -23,6 +23,7 @@ The files are numbered, so read them in that order. Each line says what you will
 | 05 | [wound/05_SEGMENTATION.md](wound/05_SEGMENTATION.md) | v2 step 3: learned segmentation. Benchmark for any segmenter, outline tool, U-Net (ONNX) trained on FUSeg then fine-tuned on 160 incision outlines: ulcers Dice 0.83 vs classical 0.17; incision numbers preliminary (AI outlines rejected, see 07) | 20 min |
 | 06 | [wound/06_CLASSIFIER_V2.md](wound/06_CLASSIFIER_V2.md) | v2 step 4: attribute classifier on whole photo + wound crop (chosen by CV; swelling 0.77 → 0.81, discharge 0.82 → 0.87 AUROC) with calibrated probabilities (ECE e.g. 0.22 → 0.06) | 15 min |
 | 07 | [wound/07_HUMAN_OUTLINES.md](wound/07_HUMAN_OUTLINES.md) | **final step (to do by hand)**: draw the wound outlines with the click tool, then one command re-trains and re-grades everything; why it matters and what to run after | 10 min + outlining |
+| 08 | [wound/08_THEORY_AND_CODE_EXPLAINED.md](wound/08_THEORY_AND_CODE_EXPLAINED.md) | **new to AI? read this first**: the theory from zero (pixels, CNN, U-Net, CLIP, metrics, calibration), the system in one picture, the code file by file, what we did and why, glossary, likely interview questions | 1 h |
 
 **To prepare an interview or the defence:** read B-01 for *what* it does, B-02 for *what went wrong and how I solved it*, and B-03 for *how it is engineered*.
 
