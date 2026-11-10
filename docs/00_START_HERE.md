@@ -21,6 +21,7 @@ The files are numbered, so read them in that order. Each line says what you will
 | 03 | [wound/03_V2_ARCHITECTURE.md](wound/03_V2_ARCHITECTURE.md) | v2 design: module map, GoF patterns, SOLID, DRY, CV best practices, how the refactor was proven safe | 20 min |
 | 04 | [wound/04_CALIBRATION.md](wound/04_CALIBRATION.md) | v2 step 2: calibration card (ArUco homography, white balance in linear RGB, exact mm²); results on ground-truth photos and honest limits | 20 min |
 | 05 | [wound/05_SEGMENTATION.md](wound/05_SEGMENTATION.md) | v2 step 3: learned segmentation. Benchmark for any segmenter, outline tool, U-Net (ONNX) trained on FUSeg then fine-tuned on 160 incision outlines: incisions Dice 0.46 vs classical 0.18 (16/19 paired wins), ulcers 0.83 vs 0.17 | 20 min |
+| 06 | [wound/06_CLASSIFIER_V2.md](wound/06_CLASSIFIER_V2.md) | v2 step 4: attribute classifier on whole photo + wound crop (chosen by CV; swelling 0.77 → 0.81, discharge 0.82 → 0.87 AUROC) with calibrated probabilities (ECE e.g. 0.22 → 0.06) | 15 min |
 
 **To prepare an interview or the defence:** read B-01 for *what* it does, B-02 for *what went wrong and how I solved it*, and B-03 for *how it is engineered*.
 
@@ -38,7 +39,7 @@ The files are numbered, so read them in that order. Each line says what you will
 | Wound v2, step 1: architecture clean-up (modules, Strategy, Facade, portable model, one analyser, rule strategies) | ✅ done: [wound/03_V2_ARCHITECTURE.md](wound/03_V2_ARCHITECTURE.md) |
 | Wound v2, step 2: calibration card (real mm / cm², colour correction) | ✅ done: [wound/04_CALIBRATION.md](wound/04_CALIBRATION.md) |
 | Wound v2, step 3: learned wound segmentation (new `Segmenter`, Dice / IoU vs classical) | ✅ done: [wound/05_SEGMENTATION.md](wound/05_SEGMENTATION.md). Open point: have a human check the 40 AI-drafted test outlines, then decide the default segmenter |
-| Wound v2, step 4: classifier on the wound crop, calibrated probabilities, honest benchmark | planned |
+| Wound v2, step 4: classifier on the wound crop, calibrated probabilities, honest benchmark | ✅ done: [wound/06_CLASSIFIER_V2.md](wound/06_CLASSIFIER_V2.md) |
 
 **To resume:** `.\scripts\demo.ps1` starts everything (Docker must be running). Run tests with the backend stopped:
 `$env:HF_HUB_OFFLINE="1"; $env:LLM_MODE="stub"`, then `pytest` in `d1/` and `backend/`.

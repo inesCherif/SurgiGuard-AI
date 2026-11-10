@@ -258,6 +258,18 @@ Method and results: [04_CALIBRATION.md](04_CALIBRATION.md).
 - **Fix:** `annotation.snap_stroke`: each stroke point may move sideways (≤ 3 % of the long side) to the strongest local "darker and redder than the surroundings" ridge, with neighbour smoothing. The annotator decides where the cut is; snapping fixes the precision. Polygons are unchanged; 2 strokes were re-placed by hand after the visual check. Every photo carries a confidence flag, and results are reported separately on the high-confidence ones.
 - **Check:** unit test (a stroke placed 11 px too high lands within 2 px of the cut; nothing within reach means it stays within the radius); visual check of the masks. **Honesty:** labels are AI-drafted, not clinician-verified, and the same annotator drew train and test; this is why the classical segmenter stays the default (see [05_SEGMENTATION.md](05_SEGMENTATION.md), part 4).
 
+### V23. The classifier was judging the bed sheets as much as the wound
+- **Problem:** the attribute model embedded the whole photo; the wound is often a few percent of the pixels, the rest is background, clothes, dressings.
+- **Why it matters:** a frozen CLIP encoder summarises the whole scene, so small local signs (discharge, swelling) are diluted.
+- **Fix:** `WoundCropper` cuts a square box around the mask of the step-3 segmenter (35 % context, honest fallback). Whole, crop and whole+crop were compared with a protocol fixed **before** looking at test: best mean CV AUROC on train+val wins (whole+crop, 0.836 vs 0.818), then every view is reported on test. Inference uses the same cropper; the bundle declares its view so an older whole-photo bundle still works.
+- **Check:** test AUROC swelling 0.767 → 0.814 and discharge 0.818 → 0.873, paired bootstrap CIs above zero; the others within noise (urgency 0.823 → 0.809). No leakage: the segmenter never saw a test photo.
+
+### V24. Calibrating the probabilities silently changed who gets flagged
+- **Problem:** after Platt calibration (which fixed the 0.5-centred probabilities caused by class weighting: discharge ECE 0.22 → 0.06), the "uncertain" share jumped (swelling 20 % → 32 %).
+- **Why:** the uncertain band was ±0.05 *in probability units*. Calibration squeezes probabilities towards the real base rate (15–30 %), so the same ±0.05 covered many more photos. A presentation fix had changed decisions.
+- **Fix:** the threshold and band are still chosen on the raw scale, then mapped through the same monotone calibration (`band_low`, `band_high` in the bundle, format v2; v1 files still load). Calibration now changes what the number means, never who is flagged.
+- **Check:** the shipped numpy bundle reproduces the training decisions exactly on the test photos (same TP / FN / abstentions on all six heads); abstention 5.8–12.2 %.
+
 ### Note: memory and test isolation
 - Two backend tests failed once, only in the full suite, right after the backend was force-stopped while memory was nearly exhausted. Two clean full runs then gave 194/194.
 - Separately, a test that loads CLIP crashed with an access violation while the running backend held another CLIP copy (see V5).
