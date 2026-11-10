@@ -270,6 +270,13 @@ Method and results: [04_CALIBRATION.md](04_CALIBRATION.md).
 - **Fix:** the threshold and band are still chosen on the raw scale, then mapped through the same monotone calibration (`band_low`, `band_high` in the bundle, format v2; v1 files still load). Calibration now changes what the number means, never who is flagged.
 - **Check:** the shipped numpy bundle reproduces the training decisions exactly on the test photos (same TP / FN / abstentions on all six heads); abstention 5.8–12.2 %.
 
+### V25. Human review rejected the AI-drafted outlines (and a stale cache was waiting)
+- **Problem:** Ines looked at the 40 test outlines drawn by the AI assistant (V22) on the overview sheets: the lines did not follow the wounds or the cuts. The incision results of 05 (Dice 0.46 vs 0.18) and the v2 segmenter's incision training rest on them.
+- **Why:** reading coordinates off a grid on thumbnails, even with snapping, was not precise enough for 1 %-wide structures; the visual check by the same AI that drew them was not independent.
+- **Fix:** AI outlines moved aside (`labels_ai_draft`, kept as history), incision numbers in 05 marked preliminary, and a final step for a human: the click tool plus one command (`d1/scripts/after_outlines.ps1`) that fine-tunes v3, grades every segmenter on the human outlines and retrains the classifier. Guide: [07_HUMAN_OUTLINES.md](07_HUMAN_OUTLINES.md). While preparing it, a real bug was found: the classifier's crop cache did not record which segmenter made the crops, so a new segmenter would have silently reused old crops. The cache now stores the segmenter (name, size, date) and the boxes, and rebuilds itself when they change.
+- **Not affected:** FUSeg ulcer results (expert outlines) and the classifier results of 06 (graded on surgeon labels; the segmenter only places the crop box).
+- **Lesson:** labels must be checked by someone other than whoever made them, before results are built on them.
+
 ### Note: memory and test isolation
 - Two backend tests failed once, only in the full suite, right after the backend was force-stopped while memory was nearly exhausted. Two clean full runs then gave 194/194.
 - Separately, a test that loads CLIP crashed with an access violation while the running backend held another CLIP copy (see V5).

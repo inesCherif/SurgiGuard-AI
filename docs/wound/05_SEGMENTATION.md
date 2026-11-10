@@ -1,13 +1,16 @@
 # 05. Wound v2 step 3: learned segmentation
 
-> Status: **parts 1–4 done.** Learned model fine-tuned on surgical incisions (v2) beats the classical segmenter
-> on incisions and on ulcers. Classical remains the default until the incision outlines are checked by a human
-> (they were drafted by an AI assistant, see part 4).
+> Status: **parts 1–4 done, incision results PRELIMINARY.** At human review (10 Nov 2026) the AI-drafted incision
+> outlines used below were judged wrong (the lines did not follow the wounds), so the incision numbers in this page are
+> not reliable and v2 was partly trained on wrong examples (journal V25). Final step: outlines drawn by a human, then
+> one command re-trains and re-grades everything: **[07_HUMAN_OUTLINES.md](07_HUMAN_OUTLINES.md)**. The FUSeg (ulcer)
+> results are not affected (expert outlines from the dataset).
 > Previous: [04_CALIBRATION.md](04_CALIBRATION.md). Journal: [02_PROBLEMS_AND_SOLUTIONS.md](02_PROBLEMS_AND_SOLUTIONS.md) (V15–V22).
 
 ## Results in two tables
 
-**Surgical incisions** (40 SurgWound test photos, outlines drafted by an AI assistant; "high" = the 19 photos
+**Surgical incisions — preliminary, graded against AI-drafted outlines later rejected at human review (V25)**
+(40 SurgWound test photos, outlines drafted by an AI assistant; "high" = the 19 photos
 where the cut is clearly visible). `scripts/compare_segmenters.py`, results in `d1/models/wound_seg/compare_incisions.json`:
 
 | Segmenter | Dice (high, 19) | Dice (all, 40) | Precision (high) | Recall (high) | Width ratio (all) | Nothing found (all) |
