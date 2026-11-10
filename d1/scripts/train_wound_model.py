@@ -68,13 +68,21 @@ def features(prep: Path, rows: list[dict], encoder: str = wm.ENCODER) -> np.ndar
     return x
 
 
+def _segmenter_id(segmenter: Path) -> str:
+    """Name + size + modification time: a new or retrained segmenter invalidates the crop cache (journal V25)."""
+    st = Path(segmenter).stat()
+    return f"{Path(segmenter).name}:{st.st_size}:{int(st.st_mtime)}"
+
+
 def crops(prep: Path, rows: list[dict], segmenter: Path) -> list[dict]:
-    """Box around the wound for every photo (WoundCropper + learned segmenter), cached in <prep>/crops.json."""
-    cache = prep / "crops.json"
+    """Box around the wound for every photo (WoundCropper + learned segmenter), cached in <prep>/crops.json.
+    The cache records which segmenter made it and is rebuilt when the segmenter changes."""
+    cache, sid = prep / "crops.json", _segmenter_id(segmenter)
     if cache.exists():
         c = json.loads(cache.read_text(encoding="utf-8"))
-        if [r["image"] for r in c] == [r["image"] for r in rows]:
-            return c
+        if isinstance(c, dict) and c.get("segmenter") == sid and                 [b["image"] for b in c["boxes"]] == [r["image"] for r in rows]:
+            return c["boxes"]
+        print("  crop cache made with another segmenter (or old format): rebuilding", flush=True)
     from surgiguard_d1.wound.seg_data import read_bgr
     cropper = wm.get_cropper(str(segmenter))
     out = []
@@ -83,16 +91,18 @@ def crops(prep: Path, rows: list[dict], segmenter: Path) -> list[dict]:
         out.append({"image": r["image"], "box": list(c.box), "found": c.found})
         if i % 100 == 0:
             print(f"  crops {i}/{len(rows)}", flush=True)
-    cache.write_text(json.dumps(out), encoding="utf-8")
+    cache.write_text(json.dumps({"segmenter": sid, "boxes": out}), encoding="utf-8")
     return out
 
 
 def crop_features(prep: Path, rows: list[dict], boxes: list[dict]) -> np.ndarray:
-    """Encoder features of the wound crop of every photo, cached in <prep>/features_crop.npz."""
+    """Encoder features of the wound crop of every photo, cached in <prep>/features_crop.npz together with the
+    boxes they were computed from (new boxes -> features recomputed)."""
     cache = prep / "features_crop.npz"
+    key = np.array([b["box"] for b in boxes], np.int64)
     if cache.exists():
         z = np.load(cache, allow_pickle=True)
-        if list(z["images"]) == [r["image"] for r in rows]:
+        if list(z["images"]) == [r["image"] for r in rows] and "boxes" in z.files and np.array_equal(z["boxes"], key):
             return z["x"]
     from PIL import Image, ImageOps
     xs = []
@@ -102,7 +112,7 @@ def crop_features(prep: Path, rows: list[dict], boxes: list[dict]) -> np.ndarray
         if i % 50 == 0:
             print(f"  crop features {i}/{len(rows)}", flush=True)
     x = np.stack(xs)
-    np.savez(cache, x=x, images=np.array([r["image"] for r in rows]))
+    np.savez(cache, x=x, images=np.array([r["image"] for r in rows]), boxes=key)
     return x
 
 
