@@ -1,0 +1,564 @@
+{
+ "protocol": "(decided before looking at any test number):\n1. Views: \"whole\" (the photo, as today), \"crop\" (WoundCropper + segmenter v2), \"both\" (the two feature vectors\n   concatenated). The segmenter was trained on SurgWound TRAIN photos only, so no test photo was ever seen.\n2. Per view and attribute: the same 5-fold CV and C grid as train_wound_model.py, on train+val only.\n3. The view used from now on = the best MEAN CV AUROC over the six attributes. The test split is then scored for\n   every view (so nothing is hidden), with bootstrap CIs and a paired bootstrap of (chosen - whole).\n4. Calibration of the chosen view: none vs temperature vs Platt, compared by a second-level CV on the out-of-fold\n   logits (fit on 4/5, measure on 1/5); the winner is fitted on all out-of-fold logits and applied once to test.\nWrites models/wound_view_experiment.json and caches crops/features in the prepared folder.",
+ "segmenter": "C:\\Users\\juba839\\OneDrive\\3eme\\hackathons\\hackcure_esen\\HackCure\\d1\\models\\wound_seg\\unet_v2.onnx",
+ "crop_found_pct": 95.8,
+ "crop_found_test_pct": 96.4,
+ "cv_auroc": {
+  "erythema": {
+   "whole": 0.748,
+   "crop": 0.747,
+   "both": 0.759
+  },
+  "edema": {
+   "whole": 0.77,
+   "crop": 0.77,
+   "both": 0.771
+  },
+  "exudate": {
+   "whole": 0.855,
+   "crop": 0.878,
+   "both": 0.885
+  },
+  "not_healed": {
+   "whole": 0.835,
+   "crop": 0.844,
+   "both": 0.853
+  },
+  "elevated_risk": {
+   "whole": 0.856,
+   "crop": 0.88,
+   "both": 0.882
+  },
+  "needs_review": {
+   "whole": 0.841,
+   "crop": 0.862,
+   "both": 0.869
+  }
+ },
+ "mean_cv_auroc": {
+  "whole": 0.818,
+  "crop": 0.83,
+  "both": 0.836
+ },
+ "chosen_view": "both",
+ "test": {
+  "erythema": {
+   "whole": {
+    "auroc": 0.759,
+    "ci": [
+     0.665,
+     0.839
+    ]
+   },
+   "crop": {
+    "auroc": 0.743,
+    "ci": [
+     0.647,
+     0.826
+    ]
+   },
+   "both": {
+    "auroc": 0.766,
+    "ci": [
+     0.67,
+     0.849
+    ]
+   },
+   "both_minus_whole_95ci": [
+    -0.034,
+    0.047
+   ]
+  },
+  "edema": {
+   "whole": {
+    "auroc": 0.767,
+    "ci": [
+     0.652,
+     0.871
+    ]
+   },
+   "crop": {
+    "auroc": 0.83,
+    "ci": [
+     0.734,
+     0.913
+    ]
+   },
+   "both": {
+    "auroc": 0.814,
+    "ci": [
+     0.718,
+     0.898
+    ]
+   },
+   "both_minus_whole_95ci": [
+    0.009,
+    0.09
+   ]
+  },
+  "exudate": {
+   "whole": {
+    "auroc": 0.818,
+    "ci": [
+     0.698,
+     0.926
+    ]
+   },
+   "crop": {
+    "auroc": 0.909,
+    "ci": [
+     0.841,
+     0.97
+    ]
+   },
+   "both": {
+    "auroc": 0.873,
+    "ci": [
+     0.785,
+     0.952
+    ]
+   },
+   "both_minus_whole_95ci": [
+    0.014,
+    0.11
+   ]
+  },
+  "not_healed": {
+   "whole": {
+    "auroc": 0.771,
+    "ci": [
+     0.689,
+     0.846
+    ]
+   },
+   "crop": {
+    "auroc": 0.811,
+    "ci": [
+     0.723,
+     0.884
+    ]
+   },
+   "both": {
+    "auroc": 0.803,
+    "ci": [
+     0.72,
+     0.875
+    ]
+   },
+   "both_minus_whole_95ci": [
+    0.0,
+    0.07
+   ]
+  },
+  "elevated_risk": {
+   "whole": {
+    "auroc": 0.843,
+    "ci": [
+     0.736,
+     0.927
+    ]
+   },
+   "crop": {
+    "auroc": 0.852,
+    "ci": [
+     0.742,
+     0.934
+    ]
+   },
+   "both": {
+    "auroc": 0.853,
+    "ci": [
+     0.749,
+     0.938
+    ]
+   },
+   "both_minus_whole_95ci": [
+    -0.034,
+    0.06
+   ]
+  },
+  "needs_review": {
+   "whole": {
+    "auroc": 0.823,
+    "ci": [
+     0.714,
+     0.916
+    ]
+   },
+   "crop": {
+    "auroc": 0.774,
+    "ci": [
+     0.648,
+     0.889
+    ]
+   },
+   "both": {
+    "auroc": 0.809,
+    "ci": [
+     0.683,
+     0.91
+    ]
+   },
+   "both_minus_whole_95ci": [
+    -0.062,
+    0.037
+   ]
+  }
+ },
+ "calibration": {
+  "erythema": {
+   "cv": {
+    "none": {
+     "ece": 0.1286,
+     "brier": 0.1842
+    },
+    "temperature": {
+     "ece": 0.1304,
+     "brier": 0.185
+    },
+    "platt": {
+     "ece": 0.0797,
+     "brier": 0.1704
+    }
+   },
+   "chosen": "platt",
+   "a": 0.8548,
+   "c": -0.6817,
+   "test_raw": {
+    "ece": 0.1238,
+    "brier": 0.182
+   },
+   "test_calibrated": {
+    "ece": 0.0767,
+    "brier": 0.1714
+   },
+   "test_positive_rate": 0.305,
+   "reliability_test_calibrated": [
+    {
+     "bin": "0.0-0.2",
+     "n": 45,
+     "mean_predicted": 0.122,
+     "observed": 0.089
+    },
+    {
+     "bin": "0.2-0.4",
+     "n": 58,
+     "mean_predicted": 0.283,
+     "observed": 0.328
+    },
+    {
+     "bin": "0.4-0.6",
+     "n": 19,
+     "mean_predicted": 0.501,
+     "observed": 0.474
+    },
+    {
+     "bin": "0.6-0.8",
+     "n": 8,
+     "mean_predicted": 0.664,
+     "observed": 0.875
+    },
+    {
+     "bin": "0.8-1.0",
+     "n": 1,
+     "mean_predicted": 0.886,
+     "observed": 1.0
+    }
+   ]
+  },
+  "edema": {
+   "cv": {
+    "none": {
+     "ece": 0.2284,
+     "brier": 0.1613
+    },
+    "temperature": {
+     "ece": 0.1893,
+     "brier": 0.1571
+    },
+    "platt": {
+     "ece": 0.073,
+     "brier": 0.1039
+    }
+   },
+   "chosen": "platt",
+   "a": 1.0787,
+   "c": -1.4955,
+   "test_raw": {
+    "ece": 0.1912,
+    "brier": 0.1576
+   },
+   "test_calibrated": {
+    "ece": 0.0479,
+    "brier": 0.1229
+   },
+   "test_positive_rate": 0.183,
+   "reliability_test_calibrated": [
+    {
+     "bin": "0.0-0.2",
+     "n": 86,
+     "mean_predicted": 0.082,
+     "observed": 0.105
+    },
+    {
+     "bin": "0.2-0.4",
+     "n": 22,
+     "mean_predicted": 0.279,
+     "observed": 0.364
+    },
+    {
+     "bin": "0.4-0.6",
+     "n": 6,
+     "mean_predicted": 0.491,
+     "observed": 0.667
+    },
+    {
+     "bin": "0.6-0.8",
+     "n": 1,
+     "mean_predicted": 0.652,
+     "observed": 0.0
+    }
+   ]
+  },
+  "exudate": {
+   "cv": {
+    "none": {
+     "ece": 0.192,
+     "brier": 0.1221
+    },
+    "temperature": {
+     "ece": 0.1295,
+     "brier": 0.1094
+    },
+    "platt": {
+     "ece": 0.0612,
+     "brier": 0.0812
+    }
+   },
+   "chosen": "platt",
+   "a": 1.732,
+   "c": -1.2735,
+   "test_raw": {
+    "ece": 0.2171,
+    "brier": 0.1296
+   },
+   "test_calibrated": {
+    "ece": 0.0639,
+    "brier": 0.0759
+   },
+   "test_positive_rate": 0.128,
+   "reliability_test_calibrated": [
+    {
+     "bin": "0.0-0.2",
+     "n": 94,
+     "mean_predicted": 0.05,
+     "observed": 0.053
+    },
+    {
+     "bin": "0.2-0.4",
+     "n": 15,
+     "mean_predicted": 0.281,
+     "observed": 0.067
+    },
+    {
+     "bin": "0.4-0.6",
+     "n": 4,
+     "mean_predicted": 0.443,
+     "observed": 0.25
+    },
+    {
+     "bin": "0.6-0.8",
+     "n": 4,
+     "mean_predicted": 0.658,
+     "observed": 0.75
+    },
+    {
+     "bin": "0.8-1.0",
+     "n": 8,
+     "mean_predicted": 0.908,
+     "observed": 0.75
+    }
+   ]
+  },
+  "not_healed": {
+   "cv": {
+    "none": {
+     "ece": 0.0999,
+     "brier": 0.1538
+    },
+    "temperature": {
+     "ece": 0.1018,
+     "brier": 0.1534
+    },
+    "platt": {
+     "ece": 0.095,
+     "brier": 0.1515
+    }
+   },
+   "chosen": "platt",
+   "a": 1.1564,
+   "c": -0.2433,
+   "test_raw": {
+    "ece": 0.0766,
+    "brier": 0.1801
+   },
+   "test_calibrated": {
+    "ece": 0.0899,
+    "brier": 0.178
+   },
+   "test_positive_rate": 0.401,
+   "reliability_test_calibrated": [
+    {
+     "bin": "0.0-0.2",
+     "n": 48,
+     "mean_predicted": 0.094,
+     "observed": 0.146
+    },
+    {
+     "bin": "0.2-0.4",
+     "n": 26,
+     "mean_predicted": 0.317,
+     "observed": 0.269
+    },
+    {
+     "bin": "0.4-0.6",
+     "n": 20,
+     "mean_predicted": 0.484,
+     "observed": 0.45
+    },
+    {
+     "bin": "0.6-0.8",
+     "n": 24,
+     "mean_predicted": 0.713,
+     "observed": 0.708
+    },
+    {
+     "bin": "0.8-1.0",
+     "n": 19,
+     "mean_predicted": 0.888,
+     "observed": 0.789
+    }
+   ]
+  },
+  "elevated_risk": {
+   "cv": {
+    "none": {
+     "ece": 0.1312,
+     "brier": 0.1138
+    },
+    "temperature": {
+     "ece": 0.1167,
+     "brier": 0.1138
+    },
+    "platt": {
+     "ece": 0.0663,
+     "brier": 0.0952
+    }
+   },
+   "chosen": "platt",
+   "a": 1.0675,
+   "c": -1.0558,
+   "test_raw": {
+    "ece": 0.151,
+    "brier": 0.1271
+   },
+   "test_calibrated": {
+    "ece": 0.0717,
+    "brier": 0.095
+   },
+   "test_positive_rate": 0.146,
+   "reliability_test_calibrated": [
+    {
+     "bin": "0.0-0.2",
+     "n": 98,
+     "mean_predicted": 0.05,
+     "observed": 0.041
+    },
+    {
+     "bin": "0.2-0.4",
+     "n": 16,
+     "mean_predicted": 0.292,
+     "observed": 0.375
+    },
+    {
+     "bin": "0.4-0.6",
+     "n": 11,
+     "mean_predicted": 0.525,
+     "observed": 0.182
+    },
+    {
+     "bin": "0.6-0.8",
+     "n": 8,
+     "mean_predicted": 0.69,
+     "observed": 0.625
+    },
+    {
+     "bin": "0.8-1.0",
+     "n": 4,
+     "mean_predicted": 0.861,
+     "observed": 0.75
+    }
+   ]
+  },
+  "needs_review": {
+   "cv": {
+    "none": {
+     "ece": 0.1386,
+     "brier": 0.1089
+    },
+    "temperature": {
+     "ece": 0.1178,
+     "brier": 0.1079
+    },
+    "platt": {
+     "ece": 0.0516,
+     "brier": 0.0814
+    }
+   },
+   "chosen": "platt",
+   "a": 1.032,
+   "c": -1.2809,
+   "test_raw": {
+    "ece": 0.1567,
+    "brier": 0.1277
+   },
+   "test_calibrated": {
+    "ece": 0.0957,
+    "brier": 0.0902
+   },
+   "test_positive_rate": 0.117,
+   "reliability_test_calibrated": [
+    {
+     "bin": "0.0-0.2",
+     "n": 106,
+     "mean_predicted": 0.047,
+     "observed": 0.047
+    },
+    {
+     "bin": "0.2-0.4",
+     "n": 19,
+     "mean_predicted": 0.294,
+     "observed": 0.263
+    },
+    {
+     "bin": "0.4-0.6",
+     "n": 7,
+     "mean_predicted": 0.549,
+     "observed": 0.571
+    },
+    {
+     "bin": "0.6-0.8",
+     "n": 3,
+     "mean_predicted": 0.676,
+     "observed": 0.333
+    },
+    {
+     "bin": "0.8-1.0",
+     "n": 2,
+     "mean_predicted": 0.817,
+     "observed": 0.5
+    }
+   ]
+  }
+ }
+}

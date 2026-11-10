@@ -62,7 +62,8 @@ def test_shipped_portable_bundle_matches_the_legacy_pickle():
     portable = mb.load(portable_path)
     x = np.asarray(legacy["ood"]["reference"], np.float64)[:100]
     for name, h in legacy["heads"].items():
-        p_sklearn = h["model"].predict_proba(h["scaler"].transform(x))[:, 1]
+        z = h["model"].decision_function(h["scaler"].transform(x))     # step 4: heads may carry Platt calibration
+        p_sklearn = 1 / (1 + np.exp(-(h.get("calib_a", 1.0) * z + h.get("calib_c", 0.0))))
         assert np.abs(portable.heads[name].probability(x) - p_sklearn).max() < 1e-9
         assert portable.heads[name].threshold == pytest.approx(h["threshold"])
     assert portable.ood.k == legacy["ood"]["k"] and portable.encoder == legacy["encoder"]
@@ -82,3 +83,23 @@ def test_portable_bundle_loads_without_scikit_learn(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", guarded)
     b = mb.load(MODELS / "wound_heads.json")
     assert set(b.heads) == {"erythema", "edema", "exudate", "not_healed", "elevated_risk", "needs_review"}
+
+
+def test_calibrated_head_survives_the_round_trip_and_keeps_the_ranking(tmp_path):
+    from dataclasses import replace
+    h = replace(_toy_head(), calib_a=0.5, calib_c=-1.0)
+    again = mb.load(mb.ModelBundle("v", "enc", "data", {"toy": h}).save(tmp_path / "c.json")).heads["toy"]
+    x = np.random.default_rng(1).normal(size=(20, 3))
+    assert np.allclose(again.probability(x), 1 / (1 + np.exp(-(0.5 * x[:, 0] - 1.0))))
+    assert np.array_equal(np.argsort(again.probability(x)), np.argsort(_toy_head().probability(x)))
+
+
+def test_version_1_manifests_still_load_without_calibration(tmp_path):
+    manifest = mb.ModelBundle("v", "enc", "data", {"toy": _toy_head()}).save(tmp_path / "old.json")
+    data = json.loads(manifest.read_text())
+    data["format_version"] = 1
+    for h in data["heads"].values():
+        h.pop("calib_a"), h.pop("calib_c")
+    manifest.write_text(json.dumps(data))
+    h = mb.load(manifest).heads["toy"]
+    assert (h.calib_a, h.calib_c) == (1.0, 0.0)

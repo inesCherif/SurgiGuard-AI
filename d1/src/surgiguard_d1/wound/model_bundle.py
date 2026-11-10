@@ -20,7 +20,8 @@ from pathlib import Path
 
 import numpy as np
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2            # 2: optional probability calibration per head (calib_a, calib_c); 1 is still read
+READABLE_VERSIONS = (1, 2)
 YES, NO, UNCERTAIN = "yes", "no", "uncertain"
 
 
@@ -30,7 +31,10 @@ def _sigmoid(z: np.ndarray) -> np.ndarray:
 
 @dataclass(frozen=True)
 class LinearHead:
-    """Standardisation + logistic regression + a sensitivity-first operating point with an abstention band."""
+    """Standardisation + logistic regression + a sensitivity-first operating point with an abstention band.
+
+    calib_a / calib_c: post-hoc probability calibration p = sigmoid(calib_a * z + calib_c) (prob_calibration.py);
+    the defaults (1, 0) leave the raw logistic output unchanged. `threshold` is on the same (calibrated) scale."""
     name: str
     mean: np.ndarray
     scale: np.ndarray
@@ -39,15 +43,26 @@ class LinearHead:
     threshold: float
     band: float
     metrics: dict = field(default_factory=dict)
+    calib_a: float = 1.0
+    calib_c: float = 0.0
+    band_low: float | None = None      # calibrated heads: the raw band [thr - band, thr + band] mapped through the
+    band_high: float | None = None     # (monotone) calibration, so decisions are exactly those of the raw model
+
+    def logit(self, x: np.ndarray) -> np.ndarray:
+        return ((np.asarray(x, np.float64) - self.mean) / self.scale) @ self.coef + self.intercept
 
     def probability(self, x: np.ndarray) -> np.ndarray:
-        """x: (n, d) features -> (n,) probability of the positive class."""
-        z = ((np.asarray(x, np.float64) - self.mean) / self.scale) @ self.coef + self.intercept
-        return _sigmoid(z)
+        """x: (n, d) features -> (n,) (calibrated) probability of the positive class."""
+        return _sigmoid(self.calib_a * self.logit(x) + self.calib_c)
 
     def decide(self, p: float, familiar: bool = True) -> str:
         """Abstain on unfamiliar photos and inside the band around the threshold, instead of guessing."""
-        if not familiar or abs(p - self.threshold) < self.band:
+        if not familiar:
+            return UNCERTAIN
+        if self.band_low is not None and self.band_high is not None:
+            if self.band_low < p < self.band_high:
+                return UNCERTAIN
+        elif abs(p - self.threshold) < self.band:
             return UNCERTAIN
         return YES if p >= self.threshold else NO
 
@@ -88,7 +103,8 @@ class ModelBundle:
         heads_meta = {}
         for name, h in self.heads.items():
             arrays.update({f"{name}.mean": h.mean, f"{name}.scale": h.scale, f"{name}.coef": h.coef})
-            heads_meta[name] = {"intercept": h.intercept, "threshold": h.threshold, "band": h.band, "metrics": h.metrics}
+            heads_meta[name] = {"intercept": h.intercept, "threshold": h.threshold, "band": h.band, "metrics": h.metrics,
+                                "calib_a": h.calib_a, "calib_c": h.calib_c, "band_low": h.band_low, "band_high": h.band_high}
         if self.ood is not None:
             arrays["ood.reference"] = self.ood.reference
         np.savez_compressed(manifest_path.with_suffix(".npz"), **arrays)
@@ -103,12 +119,14 @@ class ModelBundle:
     def from_manifest(cls, manifest_path: str | Path) -> "ModelBundle":
         manifest_path = Path(manifest_path)
         m = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if m.get("format_version") != FORMAT_VERSION:
+        if m.get("format_version") not in READABLE_VERSIONS:
             raise ValueError(f"{manifest_path.name}: format_version {m.get('format_version')} not supported "
-                             f"(this code reads version {FORMAT_VERSION}); re-export the model")
+                             f"(this code reads versions {READABLE_VERSIONS}); re-export the model")
         with np.load(manifest_path.with_name(m["arrays"]), allow_pickle=False) as z:   # no pickle: safe to load
             heads = {name: LinearHead(name, z[f"{name}.mean"], z[f"{name}.scale"], z[f"{name}.coef"],
-                                      float(h["intercept"]), float(h["threshold"]), float(h["band"]), h.get("metrics", {}))
+                                      float(h["intercept"]), float(h["threshold"]), float(h["band"]), h.get("metrics", {}),
+                                      float(h.get("calib_a", 1.0)), float(h.get("calib_c", 0.0)),
+                                      h.get("band_low"), h.get("band_high"))
                      for name, h in m["heads"].items()}
             ood = None
             if m.get("ood"):
@@ -125,13 +143,15 @@ class ModelBundle:
             model, scaler = h["model"], h["scaler"]
             heads[name] = LinearHead(name, np.asarray(scaler.mean_, np.float64), np.asarray(scaler.scale_, np.float64),
                                      np.asarray(model.coef_[0], np.float64), float(model.intercept_[0]),
-                                     float(h["threshold"]), float(h["band"]), h.get("metrics", {}))
+                                     float(h["threshold"]), float(h["band"]), h.get("metrics", {}),
+                                     float(h.get("calib_a", 1.0)), float(h.get("calib_c", 0.0)),
+                                     h.get("band_low"), h.get("band_high"))
         ood = None
         if bundle.get("ood") is not None:
             o = bundle["ood"]
             ood = OODGate(np.asarray(o["reference"]), int(o["k"]), float(o["threshold"]),
                           {k: v for k, v in o.items() if k not in ("reference", "k", "threshold")})
-        meta = {k: bundle[k] for k in ("trained_at", "encoder_cv_auroc") if k in bundle}
+        meta = {k: bundle[k] for k in ("trained_at", "encoder_cv_auroc", "view") if k in bundle}
         return cls(bundle["version"], bundle.get("encoder", ""), bundle["dataset"], heads, ood, meta)
 
 

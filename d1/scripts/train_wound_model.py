@@ -33,6 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from surgiguard_d1.wound import model as wm  # noqa: E402
+from surgiguard_d1.wound import prob_calibration as pc  # noqa: E402
 
 POS = {
     "erythema": ("erythema", {"Existent"}, {"Non-existent"}),
@@ -62,6 +63,44 @@ def features(prep: Path, rows: list[dict], encoder: str = wm.ENCODER) -> np.ndar
         xs.append(wm.embed([Image.open(prep / r["image"])], encoder=encoder)[0])
         if i % 50 == 0:
             print(f"  features {i}/{len(rows)}", flush=True)
+    x = np.stack(xs)
+    np.savez(cache, x=x, images=np.array([r["image"] for r in rows]))
+    return x
+
+
+def crops(prep: Path, rows: list[dict], segmenter: Path) -> list[dict]:
+    """Box around the wound for every photo (WoundCropper + learned segmenter), cached in <prep>/crops.json."""
+    cache = prep / "crops.json"
+    if cache.exists():
+        c = json.loads(cache.read_text(encoding="utf-8"))
+        if [r["image"] for r in c] == [r["image"] for r in rows]:
+            return c
+    from surgiguard_d1.wound.seg_data import read_bgr
+    cropper = wm.get_cropper(str(segmenter))
+    out = []
+    for i, r in enumerate(rows):
+        c = cropper.crop(read_bgr(prep / r["image"]))
+        out.append({"image": r["image"], "box": list(c.box), "found": c.found})
+        if i % 100 == 0:
+            print(f"  crops {i}/{len(rows)}", flush=True)
+    cache.write_text(json.dumps(out), encoding="utf-8")
+    return out
+
+
+def crop_features(prep: Path, rows: list[dict], boxes: list[dict]) -> np.ndarray:
+    """Encoder features of the wound crop of every photo, cached in <prep>/features_crop.npz."""
+    cache = prep / "features_crop.npz"
+    if cache.exists():
+        z = np.load(cache, allow_pickle=True)
+        if list(z["images"]) == [r["image"] for r in rows]:
+            return z["x"]
+    from PIL import Image, ImageOps
+    xs = []
+    for i, (r, b) in enumerate(zip(rows, boxes)):
+        im = ImageOps.exif_transpose(Image.open(prep / r["image"])).convert("RGB")
+        xs.append(wm.embed([im.crop(tuple(b["box"]))])[0])
+        if i % 50 == 0:
+            print(f"  crop features {i}/{len(rows)}", flush=True)
     x = np.stack(xs)
     np.savez(cache, x=x, images=np.array([r["image"] for r in rows]))
     return x
@@ -120,11 +159,23 @@ def choose_encoder(prep: Path, rows: list[dict]) -> str:
     return max(scores, key=scores.get), scores
 
 
-def main(prep: Path) -> None:
+def main(prep: Path, view: str = "whole", segmenter: Path | None = None, calibrate: bool = True,
+         encoder: str | None = None) -> None:
     rows = list(csv.DictReader(open(prep / "labels.csv", encoding="utf-8")))
-    encoder, encoder_scores = choose_encoder(prep, rows)
+    if encoder:    # reuse an encoder choice already made by CV (scores carried over from the previous metrics file)
+        prev = ROOT / "models" / "wound_model_metrics.json"
+        encoder_scores = json.loads(prev.read_text(encoding="utf-8")).get("encoder_cv_auroc", {}) if prev.exists() else {}
+    else:
+        encoder, encoder_scores = choose_encoder(prep, rows)
     print("chosen encoder:", encoder, flush=True)
     x = features(prep, rows, encoder)
+    view_meta = {"kind": "whole"}
+    if view == "whole+crop":       # step 4: whole-photo features + features of the crop around the wound
+        boxes = crops(prep, rows, segmenter)
+        x = np.concatenate([x, crop_features(prep, rows, boxes)], 1)
+        view_meta = {"kind": "whole+crop", "segmenter": segmenter.resolve().relative_to(ROOT / "models").as_posix(),
+                     "margin": wm.CROP_MARGIN, "min_side_frac": wm.CROP_MIN_SIDE,
+                     "crop_found_pct": round(float(np.mean([b["found"] for b in boxes]) * 100), 1)}
     split = np.array([r["split"] for r in rows])
     heads, metrics = {}, {}
     for name, (col, pos, neg) in POS.items():
@@ -140,13 +191,24 @@ def main(prep: Path) -> None:
             auc = roc_auc_score(y_tr, oof)
             if auc > best_auc:
                 best_c, best_auc, best_oof = c, auc, oof
+        # calibration (step 4): Platt scaling fitted on out-of-fold LOGITS of the chosen C, never on the test split.
+        # The operating point stays chosen on the RAW scale and is then mapped through the (monotone) calibration,
+        # so every yes / no / uncertain decision is unchanged; only the probability shown becomes honest (V24).
+        calib_a, calib_c = 1.0, 0.0
+        pipe = make_pipeline(StandardScaler(), LogisticRegression(C=best_c, class_weight="balanced", max_iter=4000))
+        oof_z = cross_val_predict(pipe, x[tr], y_tr, cv=cv, method="decision_function")
+        if calibrate:
+            calib_a, calib_c = pc.fit_platt(oof_z, y_tr)
+        to_cal = lambda p_raw: float(pc.apply(np.log(p_raw / (1 - p_raw)), calib_a, calib_c))  # noqa: E731
         # threshold: highest one that still reaches the target sensitivity on out-of-fold predictions
         cands = np.sort(np.unique(best_oof))[::-1]
         thr = next((t for t in cands if (best_oof[y_tr == 1] >= t).mean() >= TARGET_SENSITIVITY), 0.5)
         band = 0.05
         scaler = StandardScaler().fit(x[tr])
         clf = LogisticRegression(C=best_c, class_weight="balanced", max_iter=4000).fit(scaler.transform(x[tr]), y_tr)
-        p_te = clf.predict_proba(scaler.transform(x[te]))[:, 1]
+        z_te = clf.decision_function(scaler.transform(x[te]))
+        p_te = pc.apply(z_te, 1.0, 0.0)                    # raw scale: decisions and metrics as before
+        p_te_cal = pc.apply(z_te, calib_a, calib_c)       # calibrated scale: what is shown
         test = {"n": int(te.sum()), "positives": int(y_te.sum()), "auroc": round(float(roc_auc_score(y_te, p_te)), 3),
                 "auroc_95ci": bootstrap_auc(y_te, p_te), **at_threshold(y_te, p_te, thr, band),
                 "no_abstention": at_threshold(y_te, p_te, thr, 0.0),
@@ -155,13 +217,25 @@ def main(prep: Path) -> None:
         m = {"label_column": col, "positive": sorted(pos), "negative": sorted(neg), "train_n": int(tr.sum()),
              "train_positives": int(y_tr.sum()), "C": best_c, "cv_auroc": round(float(best_auc), 3),
              "threshold": round(float(thr), 4), "band": band,
-             "cv_at_threshold": at_threshold(y_tr, best_oof, thr, band), "test": test}
+             "cv_at_threshold": at_threshold(y_tr, best_oof, thr, band), "test": test,
+             "calibration": {"method": "platt" if calibrate else "none", "a": round(calib_a, 4), "c": round(calib_c, 4),
+                             "cv_ece_raw": round(pc.ece(pc.apply(oof_z, 1.0, 0.0), y_tr), 4),
+                             "cv_ece": round(pc.ece(pc.apply(oof_z, calib_a, calib_c), y_tr), 4),
+                             "test_ece_raw": round(pc.ece(p_te, y_te), 4), "test_ece": round(pc.ece(p_te_cal, y_te), 4),
+                             "test_brier_raw": round(pc.brier(p_te, y_te), 4),
+                             "test_brier": round(pc.brier(p_te_cal, y_te), 4),
+                             "reliability_test": pc.reliability(p_te_cal, y_te, bins=5),
+                             "threshold_calibrated": round(to_cal(thr), 4),
+                             "band_calibrated": [round(to_cal(max(thr - band, 1e-6)), 4),
+                                                 round(to_cal(min(thr + band, 1 - 1e-6)), 4)]}}
         if name == "erythema":
             red = opencv_redness(prep, [r for r, k in zip(rows, te) if k])
             ok = ~np.isnan(red)
             m["test"]["opencv_redness_baseline_auroc"] = round(float(roc_auc_score(y_te[ok], red[ok])), 3)
             m["test"]["opencv_redness_baseline_coverage_pct"] = round(float(ok.mean() * 100), 1)
-        heads[name] = {"model": clf, "scaler": scaler, "threshold": float(thr), "band": band, "metrics": m}
+        heads[name] = {"model": clf, "scaler": scaler, "threshold": to_cal(thr), "band": band, "metrics": m,
+                       "calib_a": calib_a, "calib_c": calib_c,
+                       "band_low": to_cal(max(thr - band, 1e-6)), "band_high": to_cal(min(thr + band, 1 - 1e-6))}
         metrics[name] = m
         print(f"{name:14s} CV AUROC {best_auc:.3f} | TEST AUROC {test['auroc']} {test['auroc_95ci']} "
               f"sens {test['sensitivity']} spec {test['specificity']} abstain {test['abstained_pct']}% (n={test['n']}, +{test['positives']})",
@@ -179,7 +253,7 @@ def main(prep: Path) -> None:
     ood = {"k": OOD_K, "threshold": ood_thr, "reference": unit.astype(np.float16),
            "test_flagged_pct": round(float((te_knn > ood_thr).mean() * 100), 1)}
     print(f"OOD gate: threshold {ood_thr:.4f}, test photos flagged {ood['test_flagged_pct']}%", flush=True)
-    bundle = {"version": "wound-attr-0.3", "encoder": encoder, "encoder_cv_auroc": encoder_scores, "ood": ood, "trained_at": datetime.now(timezone.utc).isoformat(),
+    bundle = {"version": "wound-attr-0.4" if view != "whole" or calibrate else "wound-attr-0.3", "view": view_meta, "encoder": encoder, "encoder_cv_auroc": encoder_scores, "ood": ood, "trained_at": datetime.now(timezone.utc).isoformat(),
               "dataset": "SurgWound (Hugging Face Sonulee/SurgWound, CC BY-SA 4.0; surgeon labels, OSU Wexner)",
               "heads": heads}
     out = ROOT / "models"
@@ -195,4 +269,13 @@ def main(prep: Path) -> None:
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]))
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("prep", type=Path)
+    ap.add_argument("--view", choices=["whole", "whole+crop"], default="whole+crop",
+                    help="features of the whole photo, or whole + crop around the wound (step 4, chosen by CV)")
+    ap.add_argument("--segmenter", type=Path, default=ROOT / "models" / "wound_seg" / "unet_v2.onnx")
+    ap.add_argument("--no-calibration", action="store_true")
+    ap.add_argument("--encoder", help="skip the encoder choice and use this one (chosen earlier by CV)")
+    a = ap.parse_args()
+    main(a.prep, a.view, a.segmenter, not a.no_calibration, a.encoder)

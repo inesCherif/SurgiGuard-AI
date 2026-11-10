@@ -10,6 +10,9 @@ Design (small expert-labelled dataset, CPU):
   a false alarm), and an "uncertain" band around it where the model abstains.
 - Unfamiliar-photo gate: too far from the training photos -> every attribute is "uncertain".
 - Explanation: occlusion sensitivity on a 5x5 grid (grey out a cell, measure the score drop). Opt-in: ~25 passes.
+- Step 4: the bundle declares its feature view (meta["view"]). "whole+crop" = whole-photo features + features of a
+  square crop around the wound found by the learned segmenter (WoundCropper), chosen by cross-validation; the heads
+  also carry Platt calibration so a probability means what it says (prob_calibration.py).
 
 The output describes visible attributes as surgeons labelled them. Decision support for the care team, never a
 diagnosis; it can only ADD a reason for review, never remove one.
@@ -33,6 +36,8 @@ HEADS_FILE = MODELS_DIR / "wound_heads.json"          # portable bundle (numpy o
 LEGACY_HEADS_FILE = MODELS_DIR / "wound_heads.joblib"  # v1 pickle, read only through the adapter
 SIZE = 224
 EVIDENCE_GRID = 5
+CROP_MARGIN = 0.35        # context kept around the wound, x its long side (peri-wound skin is where redness is judged)
+CROP_MIN_SIDE = 0.25      # minimum crop side, fraction of the photo's short side
 
 # What each head says, in plain words (positive class first).
 HEADS = {
@@ -91,6 +96,33 @@ def embed(images: list, with_patches: bool = False, encoder: str | None = None):
     return (feats, patches) if with_patches else feats
 
 
+@lru_cache(maxsize=2)
+def get_cropper(segmenter_path: str, margin: float = CROP_MARGIN, min_side_frac: float = CROP_MIN_SIDE):
+    """One WoundCropper (+ its ONNX session) per segmenter file, created once."""
+    from .crop import WoundCropper
+    from .learned import LearnedSegmenter
+    return WoundCropper(LearnedSegmenter(segmenter_path), margin, min_side_frac)
+
+
+def _view_cropper(bundle: ModelBundle):
+    v = bundle.meta.get("view") or {"kind": "whole"}
+    if v.get("kind") != "whole+crop":
+        return None
+    return get_cropper(str(MODELS_DIR / v["segmenter"]), v.get("margin", CROP_MARGIN), v.get("min_side_frac", CROP_MIN_SIDE))
+
+
+def photo_features(im, bundle: ModelBundle):
+    """Features in the layout the heads were trained on, plus the crop used (or None for the whole-photo view).
+    Strategy chosen by the bundle, so an older whole-photo bundle keeps working unchanged."""
+    x = embed([im], encoder=bundle.encoder)
+    cropper = _view_cropper(bundle)
+    if cropper is None:
+        return x, None
+    crop = cropper.crop(np.asarray(im)[..., ::-1])        # PIL RGB -> BGR for the segmenter
+    x = np.concatenate([x, embed([im.crop(crop.box)], encoder=bundle.encoder)], 1)
+    return x, crop
+
+
 def heads_file() -> Path:
     """The portable bundle if present, otherwise the legacy pickle."""
     return HEADS_FILE if HEADS_FILE.exists() else LEGACY_HEADS_FILE
@@ -126,7 +158,7 @@ def predict(data: bytes, heatmap_for: str | None = "erythema") -> dict:
     """Photo bytes -> per-attribute probability, decision (yes / no / uncertain) and an optional evidence map."""
     bundle = load_heads()
     im = _open(data)
-    x = embed([im], encoder=bundle.encoder)
+    x, crop = photo_features(im, bundle)
     familiar, distance = (True, None) if bundle.ood is None else bundle.ood.familiar(x[0])
     out = {}
     for name, head in bundle.heads.items():
@@ -141,26 +173,36 @@ def predict(data: bytes, heatmap_for: str | None = "erythema") -> dict:
     result = {"in_distribution": familiar, "ood_distance": None if distance is None else round(distance, 4),
               "ood_threshold": None if bundle.ood is None else round(bundle.ood.threshold, 4),
               "version": bundle.version, "encoder": bundle.encoder or ENCODER, "trained_on": bundle.dataset,
-              "attributes": out}
+              "attributes": out,
+              "view": (bundle.meta.get("view") or {"kind": "whole"}).get("kind"),
+              "crop": None if crop is None else {"box": list(crop.box), "wound_found": crop.found}}
     if heatmap_for and heatmap_for in bundle.heads and familiar:
-        result["_heatmap"] = occlusion_map(bundle.heads[heatmap_for], im, bundle.encoder)
+        result["_heatmap"] = occlusion_map(bundle.heads[heatmap_for], im, bundle.encoder,
+                                           crop_box=None if crop is None else crop.box)
     return result
 
 
-def occlusion_map(head, im, encoder: str | None, grid: int = EVIDENCE_GRID) -> np.ndarray:
+def occlusion_map(head, im, encoder: str | None, grid: int = EVIDENCE_GRID, crop_box=None) -> np.ndarray:
     """Grey out each grid cell and measure how much the head's probability DROPS (> 0: the cell supported it).
-    Model-agnostic and faithful to the whole model, unlike raw ViT patch attributions (which highlight background)."""
+    Model-agnostic and faithful to the whole model, unlike raw ViT patch attributions (which highlight background).
+    With a crop view, the cells are greyed on the full photo and BOTH feature halves are recomputed (whole + the same
+    crop box), so the map explains the real decision."""
     from PIL import ImageDraw
     enc = get_encoder(encoder or ENCODER)
-    base = im.convert("RGB").resize((SIZE, SIZE))
-    cell = SIZE / grid
+    base = im.convert("RGB") if crop_box is not None else im.convert("RGB").resize((SIZE, SIZE))
+    cw, ch = base.width / grid, base.height / grid
     variants = [base]
     for i in range(grid):
         for j in range(grid):
             v = base.copy()
-            ImageDraw.Draw(v).rectangle([j * cell, i * cell, (j + 1) * cell, (i + 1) * cell], fill=(128, 128, 128))
+            ImageDraw.Draw(v).rectangle([j * cw, i * ch, (j + 1) * cw, (i + 1) * ch], fill=(128, 128, 128))
             variants.append(v)
-    feats = np.concatenate([Encoder.pool(enc.tokens(variants[k:k + 2])) for k in range(0, len(variants), 2)])  # small batches
+
+    def pooled(images):
+        return np.concatenate([Encoder.pool(enc.tokens(images[k:k + 2])) for k in range(0, len(images), 2)])  # small batches
+    feats = pooled(variants)
+    if crop_box is not None:
+        feats = np.concatenate([feats, pooled([v.crop(tuple(crop_box)) for v in variants])], 1)
     p = head.probability(feats)
     return (p[0] - p[1:]).reshape(grid, grid)
 
